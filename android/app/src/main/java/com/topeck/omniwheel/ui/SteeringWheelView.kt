@@ -17,15 +17,14 @@ import kotlinx.coroutines.delay
 import kotlin.math.*
 
 /**
- * Realistic flat-bottom racing steering wheel.
- * D-shape rim, tapered 3-spoke design, leather texture, yellow 12 o'clock marker.
+ * Realistic flat-bottom racing steering wheel with ROTATION-based input.
+ * Touch anywhere on the wheel and rotate like a real steering wheel.
  */
 @Composable
 fun SteeringWheelView(
     viewModel: SteeringViewModel,
     isGyroActive: Boolean = false,
     showAngleText: Boolean = true,
-    showModeIndicator: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val angle by remember { derivedStateOf { viewModel.outputAngle } }
@@ -46,15 +45,15 @@ fun SteeringWheelView(
                 detectDragGestures(
                     onDragStart = { offset ->
                         isTouching.value = true
-                        viewModel.onTouchStart(
-                            offset.x,
-                            size.width / 2f,
-                            size.width.toFloat()
-                        )
+                        val cx = size.width / 2f
+                        val cy = size.height / 2f
+                        viewModel.onRotationTouchStart(offset.x - cx, offset.y - cy)
                     },
                     onDrag = { change, _ ->
                         change.consume()
-                        viewModel.onTouchMove(change.position.x)
+                        val cx = size.width / 2f
+                        val cy = size.height / 2f
+                        viewModel.onRotationTouchMove(change.position.x - cx, change.position.y - cy)
                     },
                     onDragEnd = {
                         isTouching.value = false
@@ -85,7 +84,7 @@ fun SteeringWheelView(
                     center = center, style = Stroke(16f))
             }
 
-            // 3. D-SHAPED RIM (flat bottom racing wheel)
+            // 3. D-SHAPED RIM
             drawDRim(cx, cy, baseRadius, rimW, rotDeg, engaged, activeColor)
 
             // 4. TAPERED 3-SPOKES
@@ -100,12 +99,9 @@ fun SteeringWheelView(
             // 7. TICK MARKS outside rim
             drawTicks(cx, cy, baseRadius, rimW, rotDeg, activeColor)
 
-            // 8. TEXT OVERLAYS
+            // 8. ANGLE TEXT
             if (showAngleText) {
                 drawAngleDisplay(cx, cy, hubR, baseRadius, angle, isGyroActive, isTouching.value, activeColor)
-            }
-            if (showModeIndicator) {
-                drawModeLabel(cx, cy, hubR, baseRadius, isGyroActive)
             }
         }
     }
@@ -116,12 +112,9 @@ private fun DrawScope.drawDRim(
     cx: Float, cy: Float, r: Float, w: Float,
     rotDeg: Float, engaged: Boolean, accent: Color
 ) {
-    // Build D-shape center-line path (flat at bottom)
     val flatHalfDeg = 22f
-    // In screen coords: 90deg = bottom. Flat spans from (90-flatHalf) to (90+flatHalf)
     val flatStart = 90f - flatHalfDeg + rotDeg
     val flatEnd = 90f + flatHalfDeg + rotDeg
-    // Arc goes from flatEnd all the way around to flatStart
     val arcSpan = 360f - (flatEnd - flatStart)
 
     fun makePath(radius: Float): Path {
@@ -142,39 +135,32 @@ private fun DrawScope.drawDRim(
                 )
             }
 
-            // Close across the flat
             val endRad = (flatStart - 90f) * PI.toFloat() / 180f
             lineTo(cx + cos(endRad) * radius, cy + sin(endRad) * radius)
             close()
         }
     }
 
-    // Outer dark edge
     drawPath(makePath(r), color = Color(0xFF181828),
         style = Stroke(w + 4f, cap = StrokeCap.Butt))
 
-    // Main leather body
     val leatherColor = if (engaged) Color(0xFF2A2A48) else Color(0xFF222240)
     drawPath(makePath(r), color = leatherColor,
         style = Stroke(w, cap = StrokeCap.Butt))
 
-    // Outer edge highlight
     val edgeCol = if (engaged) accent.copy(alpha = 0.4f) else Color(0xFF3A3A5A)
     drawPath(makePath(r + 0.5f), color = edgeCol,
         style = Stroke(1.5f, cap = StrokeCap.Butt))
 
-    // Inner edge line
     drawPath(makePath(r - w * 0.3f), color = Color(0xFF2E2E4A).copy(alpha = 0.4f),
         style = Stroke(1f, cap = StrokeCap.Butt))
 
-    // Leather perforation dots
     val dotPath = makePath(r)
     val dotCount = 60
     for (i in 0 until dotCount) {
         val t = i.toFloat() / dotCount
         val angleDeg = flatEnd + t * arcSpan
         val norm = ((angleDeg - rotDeg) % 360 + 360) % 360
-        // Skip top marker area
         if (norm < 20f || norm > 340f) continue
         val angleRad = (angleDeg - 90f) * PI.toFloat() / 180f
         drawCircle(
@@ -183,7 +169,6 @@ private fun DrawScope.drawDRim(
         )
     }
 
-    // Flat bottom edge lines (left and right edges of the flat)
     for (flatAngle in listOf(flatStart, flatEnd)) {
         val rad = (flatAngle - 90f) * PI.toFloat() / 180f
         val x1 = cx + cos(rad) * (r - w / 2f - 1f)
@@ -199,7 +184,7 @@ private fun DrawScope.drawTaperedSpokes(
     cx: Float, cy: Float, r: Float, rimW: Float,
     hubR: Float, rotDeg: Float
 ) {
-    val spokeAngles = listOf(-90f, 30f, 150f) // top, bottom-right, bottom-left
+    val spokeAngles = listOf(-90f, 30f, 150f)
     val innerR = hubR + 3f
     val outerR = r - rimW / 2f - 2f
 
@@ -217,25 +202,21 @@ private fun DrawScope.drawTaperedSpokes(
         val p3 = Offset(cx + cosA * outerR - pCos * rimWid / 2, cy + sinA * outerR - pSin * rimWid / 2)
         val p4 = Offset(cx + cosA * outerR + pCos * rimWid / 2, cy + sinA * outerR + pSin * rimWid / 2)
 
-        // Shadow
         drawPath(Path().apply {
             moveTo(p1.x + 2f, p1.y + 2f); lineTo(p2.x + 2f, p2.y + 2f)
             lineTo(p3.x + 2f, p3.y + 2f); lineTo(p4.x + 2f, p4.y + 2f)
             close()
         }, color = Color(0xFF08081A))
 
-        // Body
         drawPath(Path().apply {
             moveTo(p1.x, p1.y); lineTo(p2.x, p2.y)
             lineTo(p3.x, p3.y); lineTo(p4.x, p4.y)
             close()
         }, color = Color(0xFF1C1C36))
 
-        // Top highlight
         drawPath(Path().apply { moveTo(p1.x, p1.y); lineTo(p4.x, p4.y) },
             color = Color(0xFF2A2A4C), style = Stroke(1f))
 
-        // Bottom shadow
         drawPath(Path().apply { moveTo(p2.x, p2.y); lineTo(p3.x, p3.y) },
             color = Color(0xFF0E0E20), style = Stroke(1f))
     }
@@ -245,19 +226,13 @@ private fun DrawScope.drawTaperedSpokes(
 private fun DrawScope.drawCenterHub(
     cx: Float, cy: Float, hubR: Float, engaged: Boolean, accent: Color
 ) {
-    // Shadow
     drawCircle(Color(0xFF0A0A18), hubR + 3f, Offset(cx + 2f, cy + 2f))
-    // Bezel
     drawCircle(Color(0xFF1A1A32), hubR + 1f, center)
-    // Face
     drawCircle(Color(0xFF18182E), hubR, center)
-    // Recess
     drawCircle(Color(0xFF141428), hubR * 0.8f, center)
     drawCircle(Color(0xFF2A2A48).copy(alpha = 0.4f), hubR * 0.8f, center, style = Stroke(1f))
-    // Inner indent
     drawCircle(Color(0xFF101022), hubR * 0.5f, center)
 
-    // Logo
     drawContext.canvas.nativeCanvas.let { canvas ->
         val paint = android.graphics.Paint().apply {
             color = if (engaged) accent.hashCode() else Color(0xFF4A4A6E).hashCode()
@@ -280,11 +255,8 @@ private fun DrawScope.drawTopMarker(
     val p1 = Offset(cx + cos(rad) * innerR, cy + sin(rad) * innerR)
     val p2 = Offset(cx + cos(rad) * outerR, cy + sin(rad) * outerR)
 
-    // Glow
     drawLine(Color(0xFFFBBF24).copy(alpha = 0.25f), p1, p2, 14f, StrokeCap.Round)
-    // Body
     drawLine(Color(0xFFFBBF24), p1, p2, 6f, StrokeCap.Round)
-    // Bright center
     drawLine(Color(0xFFFDE68A), p1, p2, 2f, StrokeCap.Round)
 }
 
@@ -312,7 +284,7 @@ private fun DrawScope.drawTicks(
     }
 }
 
-// ===== TEXT DISPLAYS =====
+// ===== ANGLE DISPLAY =====
 private fun DrawScope.drawAngleDisplay(
     cx: Float, cy: Float, hubR: Float, r: Float,
     angle: Float, gyro: Boolean, touching: Boolean, accent: Color
@@ -328,21 +300,5 @@ private fun DrawScope.drawAngleDisplay(
             setShadowLayer(3f, 0f, 0f, Color.Black.hashCode())
         }
         c.drawText("${deg}deg", cx, cy + hubR + r * 0.16f, p)
-    }
-}
-
-private fun DrawScope.drawModeLabel(
-    cx: Float, cy: Float, hubR: Float, r: Float, gyro: Boolean
-) {
-    val txt = if (gyro) "GYRO" else "TOUCH"
-    val col = if (gyro) Color(0xFF22D3EE) else Color(0xFF444444)
-    drawContext.canvas.nativeCanvas.let { c ->
-        val p = android.graphics.Paint().apply {
-            color = col.hashCode()
-            textSize = r * 0.08f
-            textAlign = android.graphics.Paint.Align.CENTER
-            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-        }
-        c.drawText(txt, cx, cy + hubR + r * 0.28f, p)
     }
 }

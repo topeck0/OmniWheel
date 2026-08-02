@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,7 +43,6 @@ class MainActivity : ComponentActivity() {
         gyroManager = GyroManager(this)
         settings = SettingsManager(this)
 
-        // Persistent logging across screens
         inputSender.onLog = { msg ->
             synchronized(appLogs) {
                 appLogs.add("[I] $msg")
@@ -80,7 +80,8 @@ class MainActivity : ComponentActivity() {
                             gyroManager = gyroManager,
                             settings = settings,
                             connectedIp = connectedIp,
-                            onDisconnect = {
+                            onBack = {
+                                // Double-back-press: first press goes to connection screen
                                 gyroManager.disable()
                                 inputSender.disconnect()
                                 connectedIp = ""
@@ -142,20 +143,16 @@ fun OmniWheelTheme(content: @Composable () -> Unit) {
 }
 
 /**
- * Main controller screen with optimized layout for long gaming sessions.
+ * Main controller screen — redesigned layout:
  *
  * Layout (landscape, top to bottom):
- * - Status bar (thin, 26dp) — connection info, GYRO toggle, EXIT, SETTINGS gear
- * - Top button row — A B X Y LB RB (48dp buttons)
- * - Main area (takes remaining space) — Steering wheel (left, ~70%) + Pedals (right, ~30%)
- * - Bottom button row — UP DN LT RT L R (42dp buttons)
+ * - Status bar (thin, 26dp) — connection info, gyro indicator (no toggle, no exit)
+ * - Horizontal pedals row (GAS + BRAKE, optional CLUTCH) — above the wheel
+ * - Main area: Steering wheel (left, ~55%) + Button grid (right, ~45%)
+ * - Bottom button row
  *
- * ZERO-LATENCY ARCHITECTURE:
- * - Steering: Touch/gyro write directly to InputSender.steering in real-time
- * - Pedals: Write directly to InputSender on each drag move
- * - Buttons: Write directly to InputSender on press/release
- * - The send loop (InputSender thread) just reads the latest volatile values
- * - No polling, no coroutine delay in the input path
+ * Double-back-press returns to connection screen (doesn't exit the app).
+ * Gyroscope is enabled/disabled from Settings, not from the controller UI.
  */
 @Composable
 fun ControllerScreen(
@@ -163,7 +160,7 @@ fun ControllerScreen(
     gyroManager: GyroManager,
     settings: SettingsManager,
     connectedIp: String,
-    onDisconnect: () -> Unit
+    onBack: () -> Unit
 ) {
     val steeringViewModel = rememberSteeringViewModel()
     var throttle by remember { mutableStateOf(0f) }
@@ -171,12 +168,31 @@ fun ControllerScreen(
     var clutch by remember { mutableStateOf(0f) }
     val activeButtons = remember { mutableStateOf(setOf<Int>()) }
     val buttons = remember { defaultButtons() }
-    var gyroEnabled by remember { mutableStateOf(false) }
     var lastPacketCount by remember { mutableIntStateOf(0) }
+
+    // Read gyro enabled from settings
+    var gyroEnabled by remember { mutableStateOf(settings.gyroEnabled) }
+    
+    // Double-back-press state
+    var backPressedOnce by remember { mutableStateOf(false) }
+    
+    // Handle double-back-press to go to connection screen
+    BackHandler(enabled = true) {
+        if (backPressedOnce) {
+            backPressedOnce = false
+            onBack()
+        } else {
+            backPressedOnce = true
+            // Reset after 2 seconds if no second press
+            kotlinx.coroutines.GlobalScope.launch {
+                delay(2000)
+                backPressedOnce = false
+            }
+        }
+    }
 
     // Apply settings to components
     LaunchedEffect(Unit) {
-        // Steering
         steeringViewModel.maxAngleDeg = settings.steeringMaxAngle.toFloat()
         steeringViewModel.sensitivity = settings.steeringSensitivity
         steeringViewModel.deadzone = settings.steeringDeadzone
@@ -185,7 +201,6 @@ fun ControllerScreen(
         steeringViewModel.damping = settings.springDamping
         steeringViewModel.inputSender = inputSender
 
-        // Gyro
         gyroManager.maxTiltDeg = settings.gyroMaxTiltDeg
         gyroManager.sensitivity = settings.gyroSensitivity
         gyroManager.deadzoneDeg = settings.gyroDeadzoneDeg
@@ -193,75 +208,72 @@ fun ControllerScreen(
         gyroManager.smoothAlpha = settings.gyroSmoothAlpha
         gyroManager.inputSender = inputSender
 
-        // Network
         inputSender.sendRateHz = settings.sendRateHz
+        
+        // Auto-enable gyro if setting is on
+        if (settings.gyroEnabled && gyroManager.isAvailable) {
+            gyroManager.enable()
+            inputSender.gyroActive = true
+        }
     }
 
-    // Lightweight sync loop — only updates pedals, buttons, and packet count
-    // Steering is written DIRECTLY by touch/gyro (zero latency)
+    // Re-read gyro setting when returning to this screen
+    LaunchedEffect(connectedIp) {
+        gyroEnabled = settings.gyroEnabled
+        if (gyroEnabled && gyroManager.isAvailable) {
+            gyroManager.enable()
+            inputSender.gyroActive = true
+        }
+    }
+
+    // Lightweight sync loop for pedals and buttons
     LaunchedEffect(Unit) {
         while (true) {
-            // Pedals + buttons + clutch (non-steering inputs)
             inputSender.throttle = if (settings.pedalReturnOnRelease || throttle > 0f)
                 (throttle * settings.throttleMaxByte / 255f).toInt().coerceIn(0, 255).toByte() else 0
             inputSender.brake = (brake * 255).toInt().toByte()
             inputSender.clutch = (clutch * 255).toInt().toByte()
             inputSender.activeButtons = activeButtons.value
             lastPacketCount = inputSender.sendCount
-            delay(1000L / 240) // 240Hz for pedals/buttons — plenty fast
+            delay(1000L / 240)
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Status bar
+            // Status bar (simplified — no GYRO toggle, no EXIT)
             ControllerStatusBar(
-                gyroEnabled = gyroEnabled,
                 gyroAvailable = gyroManager.isAvailable,
+                gyroActive = gyroEnabled && gyroManager.isEnabled,
                 connectedIp = connectedIp,
                 packetCount = if (settings.showPacketCounter) lastPacketCount else -1,
-                onGyroToggle = {
-                    gyroEnabled = !gyroEnabled
-                    inputSender.gyroActive = gyroEnabled
-                    if (gyroEnabled) {
-                        gyroManager.enable()
-                    } else {
-                        gyroManager.disable()
-                    }
-                },
-                onDisconnect = {
-                    inputSender.disconnect()
-                    onDisconnect()
-                },
-                onOpenSettings = { /* Could navigate to settings from controller */ }
             )
 
-            // Top button row: A B X Y LB RB
-            ButtonRow(
-                buttons = buttons.take(6),
-                activeButtons = activeButtons.value,
-                onButtonPress = { btnId, pressed ->
-                    activeButtons.value = if (pressed) {
-                        activeButtons.value + btnId
-                    } else {
-                        activeButtons.value - btnId
-                    }
-                },
-                buttonSize = settings.buttonSizeTop,
-                hapticEnabled = settings.hapticFeedback
+            // Horizontal pedals ABOVE the steering wheel
+            HorizontalPedalsRow(
+                throttle = throttle,
+                brake = brake,
+                clutch = clutch,
+                clutchEnabled = settings.clutchEnabled,
+                onThrottleChange = { throttle = it },
+                onBrakeChange = { brake = it },
+                onClutchChange = { clutch = it },
+                onThrottleRelease = { if (settings.pedalReturnOnRelease) throttle = 0f },
+                onBrakeRelease = { brake = 0f },
+                onClutchRelease = { clutch = 0f },
             )
 
-            // Main area: steering + pedals
+            // Main area: steering wheel (left) + button grid (right)
             Row(
                 modifier = Modifier
                     .weight(1f)
                     .background(Color(0xFF0F0F1A))
                     .padding(start = 2.dp, end = 2.dp, bottom = 2.dp)
             ) {
-                // Steering wheel (takes ~70% of width)
+                // Steering wheel (left ~55%)
                 Box(
                     modifier = Modifier
-                        .weight(0.72f)
+                        .weight(0.55f)
                         .fillMaxHeight(),
                     contentAlignment = Alignment.Center
                 ) {
@@ -269,39 +281,65 @@ fun ControllerScreen(
                         viewModel = steeringViewModel,
                         isGyroActive = gyroEnabled && gyroManager.isEnabled,
                         showAngleText = settings.showAngleText,
-                        showModeIndicator = settings.showModeIndicator
                     )
                 }
 
-                // Pedals (takes ~28% of width)
-                PedalsRow(
-                    throttle = throttle,
-                    brake = brake,
-                    clutch = clutch,
-                    onThrottleChange = { throttle = it },
-                    onBrakeChange = { brake = it },
-                    onClutchChange = { clutch = it },
-                    onThrottleRelease = { if (settings.pedalReturnOnRelease) throttle = 0f },
-                    onBrakeRelease = { brake = 0f },
-                    onClutchRelease = { clutch = 0f },
-                    pedalWidthDp = settings.pedalWidth
+                // Button grid (right ~45%) — two columns of 6
+                Column(
+                    modifier = Modifier
+                        .weight(0.45f)
+                        .fillMaxHeight()
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    verticalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    // Top row: buttons 1-6
+                    ButtonRow(
+                        buttons = buttons.take(6),
+                        activeButtons = activeButtons.value,
+                        onButtonPress = { btnId, pressed ->
+                            activeButtons.value = if (pressed) {
+                                activeButtons.value + btnId
+                            } else {
+                                activeButtons.value - btnId
+                            }
+                        },
+                        buttonSize = settings.buttonSizeTop,
+                        hapticEnabled = settings.hapticFeedback
+                    )
+                    
+                    // Bottom row: buttons 7-12
+                    ButtonRow(
+                        buttons = buttons.drop(6),
+                        activeButtons = activeButtons.value,
+                        onButtonPress = { btnId, pressed ->
+                            activeButtons.value = if (pressed) {
+                                activeButtons.value + btnId
+                            } else {
+                                activeButtons.value - btnId
+                            }
+                        },
+                        buttonSize = settings.buttonSizeBottom,
+                        hapticEnabled = settings.hapticFeedback
+                    )
+                }
+            }
+        }
+        
+        // Toast for back press
+        if (backPressedOnce) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 32.dp)
+                    .background(Color(0xFF333333).copy(alpha = 0.8f), MaterialTheme.shapes.medium)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Press back again to disconnect",
+                    fontSize = 12.sp,
+                    color = Color.White
                 )
             }
-
-            // Bottom button row: UP DN LT RT L R
-            ButtonRow(
-                buttons = buttons.drop(6),
-                activeButtons = activeButtons.value,
-                onButtonPress = { btnId, pressed ->
-                    activeButtons.value = if (pressed) {
-                        activeButtons.value + btnId
-                    } else {
-                        activeButtons.value - btnId
-                    }
-                },
-                buttonSize = settings.buttonSizeBottom,
-                hapticEnabled = settings.hapticFeedback
-            )
         }
     }
 }

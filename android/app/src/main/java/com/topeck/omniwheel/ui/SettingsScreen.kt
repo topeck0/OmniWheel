@@ -20,8 +20,7 @@ import com.topeck.omniwheel.R
 import com.topeck.omniwheel.SettingsManager
 
 /**
- * Settings screen with organized sections (folders).
- * Each section is collapsible and contains related settings.
+ * Settings screen with organized sections.
  */
 @Composable
 fun SettingsScreen(
@@ -60,7 +59,7 @@ fun SettingsScreen(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                text = "v0.6.1",
+                text = "v0.8.0-alpha",
                 fontSize = 10.sp,
                 color = Color(0xFF444444)
             )
@@ -124,13 +123,6 @@ fun SettingsScreen(
                     displayValue = "${"%.1f".format(settings.springDamping)}",
                     onValueChange = { settings.springDamping = it }
                 )
-                SettingsSlider(
-                    label = "Touch Drag Zone",
-                    value = settings.touchDragZone,
-                    min = 0.2f, max = 0.8f, step = 0.05f,
-                    displayValue = "${"%.2f".format(settings.touchDragZone)}",
-                    onValueChange = { settings.touchDragZone = it }
-                )
             }
             
             // PEDALS SECTION
@@ -141,12 +133,11 @@ fun SettingsScreen(
                 isExpanded = expandedSection == "pedals",
                 onToggle = { expandedSection = if (expandedSection == "pedals") null else "pedals" }
             ) {
-                SettingsSlider(
-                    label = "Pedal Width",
-                    value = settings.pedalWidth.toFloat(),
-                    min = 50f, max = 90f, step = 2f,
-                    displayValue = "${settings.pedalWidth}dp",
-                    onValueChange = { settings.pedalWidth = it.toInt() }
+                SettingsToggle(
+                    label = "Enable Clutch",
+                    description = "Show a third clutch pedal next to gas and brake",
+                    checked = settings.clutchEnabled,
+                    onCheckedChange = { settings.clutchEnabled = it }
                 )
                 SettingsToggle(
                     label = "Return to Zero on Release",
@@ -171,6 +162,12 @@ fun SettingsScreen(
                 isExpanded = expandedSection == "gyro",
                 onToggle = { expandedSection = if (expandedSection == "gyro") null else "gyro" }
             ) {
+                SettingsToggle(
+                    label = "Enable Gyroscope",
+                    description = "Use phone tilt to steer. Best when pedals are above the wheel.",
+                    checked = settings.gyroEnabled,
+                    onCheckedChange = { settings.gyroEnabled = it }
+                )
                 SettingsSlider(
                     label = "Max Tilt Angle",
                     value = settings.gyroMaxTiltDeg,
@@ -255,12 +252,6 @@ fun SettingsScreen(
                     onCheckedChange = { settings.showAngleText = it }
                 )
                 SettingsToggle(
-                    label = "Show Mode Indicator",
-                    description = "Show TOUCH/GYRO mode label on the wheel",
-                    checked = settings.showModeIndicator,
-                    onCheckedChange = { settings.showModeIndicator = it }
-                )
-                SettingsToggle(
                     label = "Show Packet Counter",
                     description = "Show packet count in the status bar",
                     checked = settings.showPacketCounter,
@@ -314,7 +305,6 @@ fun SettingsScreen(
                 )
             }
             
-            // Bottom spacing
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -336,7 +326,6 @@ private fun SettingsSection(
             .fillMaxWidth()
             .background(Color(0xFF14142A), MaterialTheme.shapes.medium)
     ) {
-        // Section header (clickable to expand/collapse)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -344,7 +333,6 @@ private fun SettingsSection(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Icon badge
             Box(
                 modifier = Modifier
                     .size(28.dp)
@@ -378,13 +366,12 @@ private fun SettingsSection(
             )
         }
         
-        // Expanded content
         if (isExpanded) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 4.dp)
-                    .background(Color(0xFF0F0F22))
+                    .background(Color(0xFF0F0F22)
             ) {
                 Spacer(Modifier.height(8.dp))
                 content()
@@ -433,7 +420,6 @@ private fun SettingsSlider(
             value = sliderValue,
             onValueChange = {
                 sliderValue = it
-                // Snap to step
                 val stepped = (it / step).roundToInt() * step
                 sliderValue = stepped.coerceIn(min, max)
                 onValueChange(stepped)
