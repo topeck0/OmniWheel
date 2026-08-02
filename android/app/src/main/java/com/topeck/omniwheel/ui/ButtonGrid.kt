@@ -94,57 +94,95 @@ fun VButtonView(
 }
 
 /**
- * Default button layout with numbered buttons 1-12.
- */
-fun defaultButtons(): List<VButton> = listOf(
-    // Row 1: 1-6
-    VButton(1,  "1", Color(0xFF3A3A5E), action = 1),
-    VButton(2,  "2", Color(0xFF3A3A5E), action = 2),
-    VButton(3,  "3", Color(0xFF3A3A5E), action = 3),
-    VButton(4,  "4", Color(0xFF3A3A5E), action = 4),
-    VButton(5,  "5", Color(0xFF3A3A5E), action = 5),
-    VButton(6,  "6", Color(0xFF3A3A5E), action = 6),
-    // Row 2: 7-12
-    VButton(7,  "7", Color(0xFF3A3A5E), action = 7),
-    VButton(8,  "8", Color(0xFF3A3A5E), action = 8),
-    VButton(9,  "9", Color(0xFF3A3A5E), action = 9),
-    VButton(10, "10", Color(0xFF3A3A5E), action = 10),
-    VButton(11, "11", Color(0xFF3A3A5E), action = 11),
-    VButton(12, "12", Color(0xFF3A3A5E), action = 12),
-)
-
-/**
- * Single row of buttons.
+ * Wide button (for buttons like 1, 2, 3, 13 that are wider in the reference).
  */
 @Composable
-fun ButtonRow(
-    buttons: List<VButton>,
-    activeButtons: Set<Int>,
-    onButtonPress: (Int, Boolean) -> Unit,
-    buttonSize: Int = 52,
+fun WideButtonView(
+    button: VButton,
+    isActive: Boolean,
+    onPressed: (Int, Boolean) -> Unit,
+    widthDp: Int = 80,
+    heightDp: Int = 48,
     hapticEnabled: Boolean = true
 ) {
-    Row(
+    var isPressed by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+
+    val bgColor = when {
+        isActive -> button.color.copy(alpha = 0.85f)
+        isPressed -> button.color.copy(alpha = 0.45f)
+        else -> Color(0xFF16162E)
+    }
+
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 1.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+            .width(widthDp.dp)
+            .height(heightDp.dp)
+            .background(bgColor, RoundedCornerShape(10.dp))
+            .drawBehind {
+                val borderColor = when {
+                    isActive -> button.color.copy(alpha = 0.6f)
+                    else -> Color(0xFF2A2A44)
+                }
+                drawRoundRect(
+                    color = borderColor,
+                    cornerRadius = CornerRadius(10.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f)
+                )
+            }
+            .pointerInput(button.action) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onPressed(button.action, true)
+                        tryAwaitRelease()
+                        isPressed = false
+                        if (button.mode != ButtonMode.TOGGLE) {
+                            onPressed(button.action, false)
+                        }
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
     ) {
-        buttons.forEach { btn ->
-            VButtonView(
-                button = btn,
-                isActive = activeButtons.contains(btn.action),
-                onPressed = onButtonPress,
-                size = buttonSize,
-                hapticEnabled = hapticEnabled
-            )
-        }
+        Text(
+            text = button.label,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isActive || isPressed) Color.White else Color(0xFF6A6A8A),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
 /**
- * Compact status bar — connection info only, no GYRO toggle or EXIT button.
+ * All 18 buttons matching the reference layout.
+ */
+fun allButtons(): Map<Int, VButton> = mapOf(
+    1 to VButton(1, "1", Color(0xFF3A3A5E), action = 1),
+    2 to VButton(2, "2", Color(0xFF3A3A5E), action = 2),
+    3 to VButton(3, "3", Color(0xFF3A3A5E), action = 3),
+    4 to VButton(4, "4", Color(0xFF3A3A5E), action = 4),
+    5 to VButton(5, "5", Color(0xFF3A3A5E), action = 5),
+    6 to VButton(6, "6", Color(0xFF3A3A5E), action = 6),
+    7 to VButton(7, "7", Color(0xFF3A3A5E), action = 7),
+    8 to VButton(8, "8", Color(0xFF3A3A5E), action = 8),
+    9 to VButton(9, "9", Color(0xFF3A3A5E), action = 9),
+    10 to VButton(10, "10", Color(0xFF3A3A5E), action = 10),
+    11 to VButton(11, "11", Color(0xFF3A3A5E), action = 11),
+    12 to VButton(12, "12", Color(0xFF3A3A5E), action = 12),
+    13 to VButton(13, "13", Color(0xFF3A3A5E), action = 13),
+    14 to VButton(14, "14", Color(0xFF3A3A5E), action = 14),
+    15 to VButton(15, "15", Color(0xFF3A3A5E), action = 15),
+    17 to VButton(17, "17", Color(0xFF3A3A5E), action = 17),
+    18 to VButton(18, "18", Color(0xFF3A3A5E), action = 18),
+)
+
+/**
+ * Compact status bar — connection info only.
  */
 @Composable
 fun ControllerStatusBar(
@@ -162,7 +200,6 @@ fun ControllerStatusBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Left: connection status
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "●",
@@ -185,14 +222,12 @@ fun ControllerStatusBar(
             }
         }
         
-        // Center: version
         Text(
             text = "v0.8.0-alpha",
             fontSize = 8.sp,
             color = Color(0xFF333333)
         )
         
-        // Right: gyro indicator (just status, not a toggle)
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (gyroAvailable) {
                 Text(

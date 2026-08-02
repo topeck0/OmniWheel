@@ -8,7 +8,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -83,7 +82,6 @@ class MainActivity : ComponentActivity() {
                             settings = settings,
                             connectedIp = connectedIp,
                             onBack = {
-                                // Double-back-press: first press goes to connection screen
                                 gyroManager.disable()
                                 inputSender.disconnect()
                                 connectedIp = ""
@@ -145,16 +143,21 @@ fun OmniWheelTheme(content: @Composable () -> Unit) {
 }
 
 /**
- * Main controller screen — redesigned layout:
+ * Controller screen layout matching reference:
  *
- * Layout (landscape, top to bottom):
- * - Status bar (thin, 26dp) — connection info, gyro indicator (no toggle, no exit)
- * - Horizontal pedals row (GAS + BRAKE, optional CLUTCH) — above the wheel
- * - Main area: Steering wheel (left, ~55%) + Button grid (right, ~45%)
- * - Bottom button row
+ * LEFT SIDE:
+ *   Top: Buttons 5, 6, 7, 18 (row)
+ *   Below: Button 4 (left of wheel), Button 8 (right of wheel, below 18)
+ *   Center: Steering wheel
+ *   Bottom-left: Button 14
  *
- * Double-back-press returns to connection screen (doesn't exit the app).
- * Gyroscope is enabled/disabled from Settings, not from the controller UI.
+ * RIGHT SIDE:
+ *   Top: Buttons 1, 3, 2 (large row)
+ *   Middle: Buttons 10, 15, 9
+ *   Bottom: Buttons 11, 12, 13 (13 wide), Button 17
+ *
+ * FAR RIGHT:
+ *   Two vertical sliders (Brake, Gas, optional Clutch)
  */
 @Composable
 fun ControllerScreen(
@@ -169,17 +172,20 @@ fun ControllerScreen(
     var brake by remember { mutableStateOf(0f) }
     var clutch by remember { mutableStateOf(0f) }
     val activeButtons = remember { mutableStateOf(setOf<Int>()) }
-    val buttons = remember { defaultButtons() }
+    val btnMap = remember { allButtons() }
     var lastPacketCount by remember { mutableIntStateOf(0) }
-
-    // Read gyro enabled from settings
     var gyroEnabled by remember { mutableStateOf(settings.gyroEnabled) }
-    
-    // Double-back-press state
     var backPressedOnce by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    
-    // Handle double-back-press to go to connection screen
+
+    val onBtn: (Int, Boolean) -> Unit = { btnId, pressed ->
+        activeButtons.value = if (pressed) {
+            activeButtons.value + btnId
+        } else {
+            activeButtons.value - btnId
+        }
+    }
+
     BackHandler(enabled = true) {
         if (backPressedOnce) {
             backPressedOnce = false
@@ -193,7 +199,6 @@ fun ControllerScreen(
         }
     }
 
-    // Apply settings to components
     LaunchedEffect(Unit) {
         steeringViewModel.maxAngleDeg = settings.steeringMaxAngle.toFloat()
         steeringViewModel.sensitivity = settings.steeringSensitivity
@@ -202,24 +207,19 @@ fun ControllerScreen(
         steeringViewModel.springStrength = settings.springStrength
         steeringViewModel.damping = settings.springDamping
         steeringViewModel.inputSender = inputSender
-
         gyroManager.maxTiltDeg = settings.gyroMaxTiltDeg
         gyroManager.sensitivity = settings.gyroSensitivity
         gyroManager.deadzoneDeg = settings.gyroDeadzoneDeg
         gyroManager.filterAlpha = settings.gyroFilterAlpha
         gyroManager.smoothAlpha = settings.gyroSmoothAlpha
         gyroManager.inputSender = inputSender
-
         inputSender.sendRateHz = settings.sendRateHz
-        
-        // Auto-enable gyro if setting is on
         if (settings.gyroEnabled && gyroManager.isAvailable) {
             gyroManager.enable()
             inputSender.gyroActive = true
         }
     }
 
-    // Re-read gyro setting when returning to this screen
     LaunchedEffect(connectedIp) {
         gyroEnabled = settings.gyroEnabled
         if (gyroEnabled && gyroManager.isAvailable) {
@@ -228,7 +228,6 @@ fun ControllerScreen(
         }
     }
 
-    // Lightweight sync loop for pedals and buttons
     LaunchedEffect(Unit) {
         while (true) {
             inputSender.throttle = if (settings.pedalReturnOnRelease || throttle > 0f)
@@ -243,7 +242,6 @@ fun ControllerScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Status bar (simplified — no GYRO toggle, no EXIT)
             ControllerStatusBar(
                 gyroAvailable = gyroManager.isAvailable,
                 gyroActive = gyroEnabled && gyroManager.isEnabled,
@@ -251,83 +249,144 @@ fun ControllerScreen(
                 packetCount = if (settings.showPacketCounter) lastPacketCount else -1,
             )
 
-            // Horizontal pedals ABOVE the steering wheel
-            HorizontalPedalsRow(
-                throttle = throttle,
-                brake = brake,
-                clutch = clutch,
-                clutchEnabled = settings.clutchEnabled,
-                onThrottleChange = { throttle = it },
-                onBrakeChange = { brake = it },
-                onClutchChange = { clutch = it },
-                onThrottleRelease = { if (settings.pedalReturnOnRelease) throttle = 0f },
-                onBrakeRelease = { brake = 0f },
-                onClutchRelease = { clutch = 0f },
-            )
-
-            // Main area: steering wheel (left) + button grid (right)
+            // Main content: left (wheel+buttons) | center (buttons) | right (pedals)
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .background(Color(0xFF0F0F1A))
-                    .padding(start = 2.dp, end = 2.dp, bottom = 2.dp)
+                    .fillMaxWidth()
             ) {
-                // Steering wheel (left ~55%)
+                // ===== LEFT SIDE: wheel area with surrounding buttons =====
                 Box(
                     modifier = Modifier
-                        .weight(0.55f)
-                        .fillMaxHeight(),
-                    contentAlignment = Alignment.Center
+                        .weight(0.42f)
+                        .fillMaxHeight()
                 ) {
-                    SteeringWheelView(
-                        viewModel = steeringViewModel,
-                        isGyroActive = gyroEnabled && gyroManager.isEnabled,
-                        showAngleText = settings.showAngleText,
-                    )
+                    // Top row: 5, 6, 7, 18
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
+                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        VButtonView(btnMap[5]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[6]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[7]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[18]!!, activeButtons.value, onBtn, 42, settings.hapticFeedback)
+                    }
+
+                    // Button 4 (lower-left of top row)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 2.dp, top = 30.dp)
+                    ) {
+                        VButtonView(btnMap[4]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                    }
+
+                    // Button 8 (below button 18)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(end = 2.dp, top = 34.dp)
+                    ) {
+                        VButtonView(btnMap[8]!!, activeButtons.value, onBtn, 42, settings.hapticFeedback)
+                    }
+
+                    // Steering wheel (center)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(top = 20.dp, bottom = 10.dp)
+                            .fillMaxWidth(0.95f)
+                            .fillMaxHeight(0.7f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        SteeringWheelView(
+                            viewModel = steeringViewModel,
+                            isGyroActive = gyroEnabled && gyroManager.isEnabled,
+                            showAngleText = settings.showAngleText,
+                        )
+                    }
+
+                    // Button 14 (bottom-left)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 2.dp, bottom = 4.dp)
+                    ) {
+                        VButtonView(btnMap[14]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                    }
                 }
 
-                // Button grid (right ~45%) — two columns of 6
+                // ===== CENTER-RIGHT: button grid =====
                 Column(
                     modifier = Modifier
-                        .weight(0.45f)
+                        .weight(0.38f)
                         .fillMaxHeight()
-                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                        .padding(horizontal = 2.dp, vertical = 2.dp),
                     verticalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    // Top row: buttons 1-6
-                    ButtonRow(
-                        buttons = buttons.take(6),
-                        activeButtons = activeButtons.value,
-                        onButtonPress = { btnId, pressed ->
-                            activeButtons.value = if (pressed) {
-                                activeButtons.value + btnId
-                            } else {
-                                activeButtons.value - btnId
-                            }
-                        },
-                        buttonSize = settings.buttonSizeTop,
-                        hapticEnabled = settings.hapticFeedback
-                    )
-                    
-                    // Bottom row: buttons 7-12
-                    ButtonRow(
-                        buttons = buttons.drop(6),
-                        activeButtons = activeButtons.value,
-                        onButtonPress = { btnId, pressed ->
-                            activeButtons.value = if (pressed) {
-                                activeButtons.value + btnId
-                            } else {
-                                activeButtons.value - btnId
-                            }
-                        },
-                        buttonSize = settings.buttonSizeBottom,
-                        hapticEnabled = settings.hapticFeedback
-                    )
+                    // Top row: 1, 3, 2 (larger buttons)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        VButtonView(btnMap[1]!!, activeButtons.value, onBtn, 44, settings.hapticFeedback)
+                        VButtonView(btnMap[3]!!, activeButtons.value, onBtn, 44, settings.hapticFeedback)
+                        VButtonView(btnMap[2]!!, activeButtons.value, onBtn, 44, settings.hapticFeedback)
+                    }
+
+                    // Middle row: 10, 15, 9
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        VButtonView(btnMap[10]!!, activeButtons.value, onBtn, 40, settings.hapticFeedback)
+                        VButtonView(btnMap[15]!!, activeButtons.value, onBtn, 40, settings.hapticFeedback)
+                        VButtonView(btnMap[9]!!, activeButtons.value, onBtn, 40, settings.hapticFeedback)
+                    }
+
+                    // Bottom area: 11, 12 side by side, 13 wide below, 17 to the right
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        VButtonView(btnMap[11]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[12]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[17]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                    }
+                    // Button 13 (wide, centered below 11+12)
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        WideButtonView(btnMap[13]!!, activeButtons.value, onBtn, widthDp = 140, heightDp = 34, hapticEnabled = settings.hapticFeedback)
+                    }
                 }
+
+                // ===== FAR RIGHT: vertical pedal sliders =====
+                VerticalPedalsColumn(
+                    throttle = throttle,
+                    brake = brake,
+                    clutch = clutch,
+                    clutchEnabled = settings.clutchEnabled,
+                    onThrottleChange = { throttle = it },
+                    onBrakeChange = { brake = it },
+                    onClutchChange = { clutch = it },
+                    onThrottleRelease = { if (settings.pedalReturnOnRelease) throttle = 0f },
+                    onBrakeRelease = { brake = 0f },
+                    onClutchRelease = { clutch = 0f },
+                    pedalWidthDp = settings.pedalWidth
+                )
             }
         }
-        
-        // Toast for back press
+
+        // Back-press toast
         if (backPressedOnce) {
             Box(
                 modifier = Modifier
