@@ -34,6 +34,7 @@ fun SteeringWheelView(
     modifier: Modifier = Modifier
 ) {
     val angle by viewModel.displayAngle
+    val rotDeg by viewModel.visualRotationDeg
     val isTouching = remember { mutableStateOf(false) }
 
     // Physics loop for spring return when not touching
@@ -43,10 +44,6 @@ fun SteeringWheelView(
             delay(1000L / 240)
         }
     }
-
-    // Visual rotation: map -1..1 to degrees
-    // With 900° max, show proportional rotation on screen
-    val rotDeg = angle * 180f
 
     val activeColor = if (isGyroActive) Color(0xFF22D3EE) else Color(0xFF6366F1)
     val engaged = isTouching.value || isGyroActive

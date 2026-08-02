@@ -59,7 +59,7 @@ fun SettingsScreen(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                text = "v0.8.0-alpha",
+                text = "v0.8.3-alpha",
                 fontSize = 10.sp,
                 color = Color(0xFF444444)
             )
@@ -85,42 +85,42 @@ fun SettingsScreen(
                     label = "Max Angle",
                     value = settings.steeringMaxAngle.toFloat(),
                     min = 180f, max = 1800f, step = 10f,
-                    displayValue = "${settings.steeringMaxAngle} deg",
+                    formatValue = { "${it.toInt()} deg" },
                     onValueChange = { settings.steeringMaxAngle = it.toInt() }
                 )
                 SettingsSlider(
                     label = "Sensitivity",
                     value = settings.steeringSensitivity,
                     min = 0.2f, max = 3.0f, step = 0.05f,
-                    displayValue = "${"%.2f".format(settings.steeringSensitivity)}",
+                    formatValue = { "%.2f".format(it) },
                     onValueChange = { settings.steeringSensitivity = it }
                 )
                 SettingsSlider(
                     label = "Deadzone",
                     value = settings.steeringDeadzone,
                     min = 0f, max = 0.1f, step = 0.005f,
-                    displayValue = "${"%.3f".format(settings.steeringDeadzone)}",
+                    formatValue = { "%.3f".format(it) },
                     onValueChange = { settings.steeringDeadzone = it }
                 )
                 SettingsSlider(
                     label = "Smoothing",
                     value = settings.steeringSmoothing,
                     min = 0f, max = 0.3f, step = 0.01f,
-                    displayValue = "${"%.2f".format(settings.steeringSmoothing)}",
+                    formatValue = { "%.2f".format(it) },
                     onValueChange = { settings.steeringSmoothing = it }
                 )
                 SettingsSlider(
                     label = "Spring Return Speed",
                     value = settings.springStrength,
                     min = 1f, max = 15f, step = 0.5f,
-                    displayValue = "${"%.1f".format(settings.springStrength)}",
+                    formatValue = { "%.1f".format(it) },
                     onValueChange = { settings.springStrength = it }
                 )
                 SettingsSlider(
                     label = "Damping",
                     value = settings.springDamping,
                     min = 1f, max = 10f, step = 0.5f,
-                    displayValue = "${"%.1f".format(settings.springDamping)}",
+                    formatValue = { "%.1f".format(it) },
                     onValueChange = { settings.springDamping = it }
                 )
             }
@@ -149,7 +149,7 @@ fun SettingsScreen(
                     label = "Throttle Max",
                     value = settings.throttleMaxByte.toFloat(),
                     min = 128f, max = 255f, step = 1f,
-                    displayValue = "${settings.throttleMaxByte}",
+                    formatValue = { "${it.toInt()}" },
                     onValueChange = { settings.throttleMaxByte = it.toInt() }
                 )
             }
@@ -172,35 +172,35 @@ fun SettingsScreen(
                     label = "Max Tilt Angle",
                     value = settings.gyroMaxTiltDeg,
                     min = 10f, max = 45f, step = 1f,
-                    displayValue = "${settings.gyroMaxTiltDeg.toInt()} deg",
+                    formatValue = { "${it.toInt()} deg" },
                     onValueChange = { settings.gyroMaxTiltDeg = it }
                 )
                 SettingsSlider(
                     label = "Sensitivity",
                     value = settings.gyroSensitivity,
                     min = 0.5f, max = 4.0f, step = 0.1f,
-                    displayValue = "${"%.1f".format(settings.gyroSensitivity)}",
+                    formatValue = { "%.1f".format(it) },
                     onValueChange = { settings.gyroSensitivity = it }
                 )
                 SettingsSlider(
                     label = "Deadzone",
                     value = settings.gyroDeadzoneDeg,
                     min = 0f, max = 8f, step = 0.5f,
-                    displayValue = "${"%.1f".format(settings.gyroDeadzoneDeg)} deg",
+                    formatValue = { "%.1f".format(it) + " deg" },
                     onValueChange = { settings.gyroDeadzoneDeg = it }
                 )
                 SettingsSlider(
                     label = "Filter Strength",
                     value = settings.gyroFilterAlpha,
                     min = 0.05f, max = 0.5f, step = 0.01f,
-                    displayValue = "${"%.2f".format(settings.gyroFilterAlpha)}",
+                    formatValue = { "%.2f".format(it) },
                     onValueChange = { settings.gyroFilterAlpha = it }
                 )
                 SettingsSlider(
                     label = "Output Smoothing",
                     value = settings.gyroSmoothAlpha,
                     min = 0.05f, max = 0.5f, step = 0.01f,
-                    displayValue = "${"%.2f".format(settings.gyroSmoothAlpha)}",
+                    formatValue = { "%.2f".format(it) },
                     onValueChange = { settings.gyroSmoothAlpha = it }
                 )
             }
@@ -217,14 +217,14 @@ fun SettingsScreen(
                     label = "Send Rate",
                     value = settings.sendRateHz.toFloat(),
                     min = 60f, max = 480f, step = 30f,
-                    displayValue = "${settings.sendRateHz} Hz",
+                    formatValue = { "${it.toInt()} Hz" },
                     onValueChange = { settings.sendRateHz = it.toInt() }
                 )
                 SettingsSlider(
                     label = "Heartbeat Interval",
                     value = settings.heartbeatIntervalMs.toFloat(),
                     min = 500f, max = 3000f, step = 100f,
-                    displayValue = "${settings.heartbeatIntervalMs}ms",
+                    formatValue = { "${it.toInt()}ms" },
                     onValueChange = { settings.heartbeatIntervalMs = it.toInt() }
                 )
                 SettingsInfo(
@@ -271,14 +271,14 @@ fun SettingsScreen(
                     label = "Top Row Size",
                     value = settings.buttonSizeTop.toFloat(),
                     min = 36f, max = 60f, step = 2f,
-                    displayValue = "${settings.buttonSizeTop}dp",
+                    formatValue = { "${it.toInt()}dp" },
                     onValueChange = { settings.buttonSizeTop = it.toInt() }
                 )
                 SettingsSlider(
                     label = "Bottom Row Size",
                     value = settings.buttonSizeBottom.toFloat(),
                     min = 32f, max = 56f, step = 2f,
-                    displayValue = "${settings.buttonSizeBottom}dp",
+                    formatValue = { "${it.toInt()}dp" },
                     onValueChange = { settings.buttonSizeBottom = it.toInt() }
                 )
                 SettingsToggle(
@@ -387,10 +387,16 @@ private fun SettingsSlider(
     min: Float,
     max: Float,
     step: Float,
-    displayValue: String,
+    formatValue: (Float) -> String,
     onValueChange: (Float) -> Unit
 ) {
-    var sliderValue by remember(value) { mutableStateOf(value) }
+    var sliderValue by remember { mutableStateOf(value) }
+
+    // Keep slider in sync if the parent passes a new value
+    LaunchedEffect(value) { sliderValue = value }
+
+    // Derive display from the live slider value
+    val displayText = formatValue(sliderValue)
     
     Column(
         modifier = Modifier
@@ -408,7 +414,7 @@ private fun SettingsSlider(
                 color = Color(0xFFBBBBBB)
             )
             Text(
-                text = displayValue,
+                text = displayText,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF6366F1),
