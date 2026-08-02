@@ -7,8 +7,8 @@ import kotlin.math.*
 
 /**
  * Rotation-based steering physics engine.
- * Visual rotation tracks the finger exactly (1:1).
- * Steering output is normalized and sent to the receiver.
+ * Visual rotation tracks the finger 1:1, clamped to ±maxAngleDeg.
+ * Spring return is critically-damped with zero-crossing snap to prevent overshoot.
  */
 class SteeringViewModel : ViewModel() {
     
@@ -40,12 +40,11 @@ class SteeringViewModel : ViewModel() {
     // Smoothed output for when not touching (spring return)
     private var smoothedOutput = 0f
     
-    // Visual rotation in degrees — tracks finger 1:1 when touching,
-    // spring-returns to 0 when released. This is what the Image rotates by.
+    // Visual rotation in degrees — clamped to ±maxAngleDeg
     private val _visualRotationDeg = mutableStateOf(0f)
     val visualRotationDeg: State<Float> = _visualRotationDeg
 
-       // Normalized angle for display text
+    // Normalized angle for display text
     private val _displayAngle = mutableStateOf(0f)
     val displayAngle: State<Float> = _displayAngle
     
@@ -54,8 +53,9 @@ class SteeringViewModel : ViewModel() {
     
     private fun publish() {
         if (isTouching) {
-            // Visual follows finger exactly
-            _visualRotationDeg.value = accumulatedRad * 180f / PI.toFloat()
+            // Visual follows finger, clamped to max range
+            val rawDeg = accumulatedRad * 180f / PI.toFloat()
+            _visualRotationDeg.value = rawDeg.coerceIn(-maxAngleDeg, maxAngleDeg)
             _displayAngle.value = currentAngle
         } else {
             // Visual spring-returns: map smoothedOutput back to degrees
@@ -68,7 +68,8 @@ class SteeringViewModel : ViewModel() {
         isTouching = true
         prevTouchAngleRad = atan2(touchY, touchX)
         angleAtTouchStart = currentAngle
-        accumulatedRad = 0f
+        // Start accumulatedRad from current visual position (no jump)
+        accumulatedRad = smoothedOutput * maxAngleDeg * PI.toFloat() / 180f
         velocity = 0f
         smoothedOutput = currentAngle
         publish()
@@ -109,10 +110,11 @@ class SteeringViewModel : ViewModel() {
     fun updatePhysics() {
         if (isTouching) return
         
+        val prevAngle = currentAngle
         val dist = abs(currentAngle)
         
         // Snap to zero when very close and nearly stopped
-        if (dist < 0.003f && abs(velocity) < 0.08f) {
+        if (dist < 0.005f && abs(velocity) < 0.1f) {
             currentAngle = 0f
             velocity = 0f
             smoothedOutput = 0f
@@ -121,10 +123,10 @@ class SteeringViewModel : ViewModel() {
             return
         }
         
-        // Constant spring force — no bell curve, pulls evenly at all positions
+        // Constant spring force
         val springForce = -springStrength * currentAngle
         
-        // Constant damping — no proximity boost, smooth throughout
+        // Constant damping
         val dampForce = -damping * velocity
         
         val acceleration = springForce + dampForce
@@ -134,6 +136,13 @@ class SteeringViewModel : ViewModel() {
         // Hard clamp at limits
         if (currentAngle > 1f) { currentAngle = 1f; velocity = -velocity * 0.05f }
         else if (currentAngle < -1f) { currentAngle = -1f; velocity = -velocity * 0.05f }
+        
+        // Zero-crossing snap: if we crossed zero while returning, snap to 0
+        // This prevents the -20° overshoot and the visual "skip"
+        if (prevAngle * currentAngle < 0f) {
+            currentAngle = 0f
+            velocity = 0f
+        }
         
         smoothedOutput = smoothedOutput + (currentAngle - smoothedOutput) * (1f - smoothing)
         

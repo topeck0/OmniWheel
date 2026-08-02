@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
                         AppScreen.CONNECTION -> ConnectionScreen(
                             discovery = discovery,
                             inputSender = inputSender,
+                            settings = settings,
                             onConnected = { ip ->
                                 connectedIp = ip
                                 screen = AppScreen.CONTROLLER
