@@ -7,6 +7,8 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -66,33 +68,96 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F1A)),
                     color = Color(0xFF0F0F1A)
                 ) {
-                    when (screen) {
-                        AppScreen.CONNECTION -> ConnectionScreen(
-                            discovery = discovery,
-                            inputSender = inputSender,
-                            settings = settings,
-                            onConnected = { ip ->
-                                connectedIp = ip
-                                screen = AppScreen.CONTROLLER
-                            },
-                            onOpenSettings = { screen = AppScreen.SETTINGS }
-                        )
-                        AppScreen.CONTROLLER -> ControllerScreen(
-                            inputSender = inputSender,
-                            gyroManager = gyroManager,
-                            settings = settings,
-                            connectedIp = connectedIp,
-                            onBack = {
-                                gyroManager.disable()
-                                inputSender.disconnect()
-                                connectedIp = ""
-                                screen = AppScreen.CONNECTION
+                    AnimatedContent(
+                        targetState = screen,
+                        transitionSpec = {
+                            // Determine direction based on old vs new screen
+                            val entering = if (targetState == AppScreen.CONTROLLER && initialState == AppScreen.CONNECTION) {
+                                slideInHorizontally(
+                                    initialOffsetX = { fullWidth -> fullWidth },
+                                    animationSpec = tween(350, easing = FastOutSlowInEasing)
+                                ) + fadeIn(animationSpec = tween(250, delayMillis = 50))
+                            } else if (targetState == AppScreen.SETTINGS && initialState == AppScreen.CONNECTION) {
+                                slideInVertically(
+                                    initialOffsetY = { fullHeight -> fullHeight },
+                                    animationSpec = tween(400, easing = FastOutSlowInEasing)
+                                ) + fadeIn(animationSpec = tween(200, delayMillis = 80))
+                            } else if (targetState == AppScreen.CONNECTION && initialState == AppScreen.CONTROLLER) {
+                                slideInHorizontally(
+                                    initialOffsetX = { fullWidth -> -fullWidth / 3 },
+                                    animationSpec = tween(350, easing = FastOutSlowInEasing)
+                                ) + fadeIn(animationSpec = tween(250))
+                            } else if (targetState == AppScreen.CONNECTION && initialState == AppScreen.SETTINGS) {
+                                slideInVertically(
+                                    initialOffsetY = { fullHeight -> -fullHeight / 3 },
+                                    animationSpec = tween(300, easing = FastOutSlowInEasing)
+                                ) + fadeIn(animationSpec = tween(200))
+                            } else {
+                                fadeIn(animationSpec = tween(300)) + scaleIn(
+                                    initialScale = 0.96f,
+                                    animationSpec = tween(300, easing = FastOutSlowInEasing)
+                                )
                             }
-                        )
-                        AppScreen.SETTINGS -> SettingsScreen(
-                            settings = settings,
-                            onBack = { screen = AppScreen.CONNECTION }
-                        )
+
+                            val exiting = if (initialState == AppScreen.CONNECTION && targetState == AppScreen.CONTROLLER) {
+                                slideOutHorizontally(
+                                    targetOffsetX = { fullWidth -> -fullWidth / 4 },
+                                    animationSpec = tween(300, easing = FastOutLinearInEasing)
+                                ) + fadeOut(animationSpec = tween(250))
+                            } else if (initialState == AppScreen.CONNECTION && targetState == AppScreen.SETTINGS) {
+                                slideOutVertically(
+                                    targetOffsetY = { fullHeight -> -fullHeight / 4 },
+                                    animationSpec = tween(300, easing = FastOutLinearInEasing)
+                                ) + fadeOut(animationSpec = tween(200))
+                            } else if (initialState == AppScreen.CONTROLLER && targetState == AppScreen.CONNECTION) {
+                                slideOutHorizontally(
+                                    targetOffsetX = { fullWidth -> fullWidth },
+                                    animationSpec = tween(300, easing = FastOutLinearInEasing)
+                                ) + fadeOut(animationSpec = tween(200))
+                            } else if (initialState == AppScreen.SETTINGS && targetState == AppScreen.CONNECTION) {
+                                slideOutVertically(
+                                    targetOffsetY = { fullHeight -> fullHeight },
+                                    animationSpec = tween(350, easing = FastOutLinearInEasing)
+                                ) + fadeOut(animationSpec = tween(200))
+                            } else {
+                                fadeOut(animationSpec = tween(250)) + scaleOut(
+                                    targetScale = 0.96f,
+                                    animationSpec = tween(250, easing = FastOutLinearInEasing)
+                                )
+                            }
+
+                            enterTransition = entering togetherWith exiting
+                        },
+                        label = "screenTransition"
+                    ) { currentScreen ->
+                        when (currentScreen) {
+                            AppScreen.CONNECTION -> ConnectionScreen(
+                                discovery = discovery,
+                                inputSender = inputSender,
+                                settings = settings,
+                                onConnected = { ip ->
+                                    connectedIp = ip
+                                    screen = AppScreen.CONTROLLER
+                                },
+                                onOpenSettings = { screen = AppScreen.SETTINGS }
+                            )
+                            AppScreen.CONTROLLER -> ControllerScreen(
+                                inputSender = inputSender,
+                                gyroManager = gyroManager,
+                                settings = settings,
+                                connectedIp = connectedIp,
+                                onBack = {
+                                    gyroManager.disable()
+                                    inputSender.disconnect()
+                                    connectedIp = ""
+                                    screen = AppScreen.CONNECTION
+                                }
+                            )
+                            AppScreen.SETTINGS -> SettingsScreen(
+                                settings = settings,
+                                onBack = { screen = AppScreen.CONNECTION }
+                            )
+                        }
                     }
                 }
             }
