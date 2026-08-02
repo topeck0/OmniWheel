@@ -331,6 +331,21 @@ class InputSender(private val context: Context) {
     }
 
     fun disconnect() {
+        // FIX #5: Send all-zeros packet before disconnecting so the PC
+        // releases steering, throttle, brake, and all buttons immediately
+        if (running && udpSocket != null) {
+            try {
+                val zeroPacket = Protocol.buildInputPacket(
+                    steering = 0, throttle = 0, brake = 0, clutch = 0,
+                    activeButtons = emptySet()
+                )
+                val addr = InetSocketAddress(targetIp, targetPort)
+                // Send 3 times to make sure it arrives
+                repeat(3) {
+                    udpSocket?.send(DatagramPacket(zeroPacket, zeroPacket.size, addr))
+                }
+            } catch (_: Exception) {}
+        }
         stopInternal()
         setState(State.DISCONNECTED)
         onLog?.invoke("Disconnected")

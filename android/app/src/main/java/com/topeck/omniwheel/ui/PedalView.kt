@@ -19,6 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlin.math.abs
 
 @Composable
 fun PedalView(
@@ -33,8 +35,16 @@ fun PedalView(
     val isPressed = remember { mutableStateOf(false) }
     
     LaunchedEffect(value) {
-        displayValue.value += (value - displayValue.value) * 0.35f
-        if (value <= 0f) displayValue.value = 0f
+        // FIX #4: Smooth animation loop instead of one-shot step
+        while (true) {
+            val diff = value - displayValue.value
+            if (abs(diff) < 0.002f) {
+                displayValue.value = if (value <= 0f) 0f else value
+                break
+            }
+            displayValue.value += diff * 0.18f
+            delay(16) // ~60fps
+        }
     }
     
     Column(
