@@ -6,9 +6,12 @@ import com.topeck.omniwheel.network.InputSender
 import kotlin.math.*
 
 /**
- * Steering physics engine with spring-return behavior.
- * ZERO-LATENCY: Touch moves write directly to InputSender immediately,
- * bypassing any polling loop. The 240Hz physics only handles spring-return.
+ * Rotation-based steering physics engine.
+ * The user rotates the wheel like a real steering wheel — touch anywhere on the wheel
+ * and rotate clockwise/counter-clockwise. The angle delta from the wheel center
+ * determines steering input.
+ *
+ * ZERO-LATENCY: Touch moves write directly to InputSender immediately.
  */
 class SteeringViewModel : ViewModel() {
     
@@ -16,51 +19,70 @@ class SteeringViewModel : ViewModel() {
         private const val MAX_STEERING = 32767
         private const val PHYSICS_FPS = 240
         private const val DT = 1.0 / PHYSICS_FPS
+        // How many radians of wheel rotation = full steering lock (-1..1)
+        // ~2.5 full rotations (900 deg) maps to full lock
+        private const val RAD_PER_FULL_LOCK = (900f * PI.toFloat() / 180f) / 1.0f
     }
     
-    // Tuned for instant response
     var maxAngleDeg = 900f
     var sensitivity = 1.0f
     var deadzone = 0.015f
-    var springStrength = 6.0f      // faster return
-    var damping = 4.5f              // snappier stop
-    var smoothing = 0.04f          // near-instant
+    var springStrength = 6.0f
+    var damping = 4.5f
+    var smoothing = 0.04f
     
-    // Direct input sender reference for zero-latency writes
     var inputSender: InputSender? = null
     
     // State
-    private var currentAngle = 0f
+    private var currentAngle = 0f  // -1..1 normalized steering
     private var velocity = 0f
     private var smoothedOutput = 0f
     private var isTouching = false
-    private var touchStartX = 0f
-    private var angleAtTouchStart = 0f
-    private var screenCenterX = 0f
-    private var screenWidth = 1f
     
-    // Direct output — bypass smoothing when touching for zero-latency feel
+    // Rotation tracking
+    private var touchStartAngleRad = 0f  // angle from wheel center at touch start
+    private var angleAtTouchStart = 0f  // steering value at touch start
+    
     val outputAngle: Float get() = if (isTouching) currentAngle else smoothedOutput
     val rawAngle: Float get() = currentAngle
     
-    fun onTouchStart(x: Float, centerX: Float, width: Float) {
+    /**
+     * Called when touch starts on the wheel.
+     * @param touchX touch position X relative to wheel center
+     * @param touchY touch position Y relative to wheel center
+     */
+    fun onRotationTouchStart(touchX: Float, touchY: Float) {
         isTouching = true
-        touchStartX = x
+        touchStartAngleRad = atan2(touchY, touchX)
         angleAtTouchStart = currentAngle
-        screenCenterX = centerX
-        screenWidth = width
         velocity = 0f
         smoothedOutput = currentAngle
     }
     
-    fun onTouchMove(x: Float) {
+    /**
+     * Called when touch drags on the wheel.
+     * Computes angle delta from wheel center to determine rotation.
+     * @param touchX current touch X relative to wheel center
+     * @param touchY current touch Y relative to wheel center
+     */
+    fun onRotationTouchMove(touchX: Float, touchY: Float) {
         if (!isTouching) return
-        val deltaPixels = x - touchStartX
-        val deltaNorm = (deltaPixels / (screenWidth * 0.4f)) * sensitivity
+        
+        val currentAngleRad = atan2(touchY, touchX)
+        var deltaRad = currentAngleRad - touchStartAngleRad
+        
+        // Handle wrap-around (e.g., from -PI to +PI or vice versa)
+        if (deltaRad > PI.toFloat()) deltaRad -= 2f * PI.toFloat()
+        if (deltaRad < -PI.toFloat()) deltaRad += 2f * PI.toFloat()
+        
+        // Convert rotation to steering: normalize so that ~2.5 rotations = full lock
+        val maxAngleRad = (maxAngleDeg * PI.toFloat() / 180f)
+        val deltaNorm = (deltaRad / maxAngleRad) * sensitivity
+        
         currentAngle = (angleAtTouchStart + deltaNorm).coerceIn(-1f, 1f)
         velocity = 0f
         
-        // ZERO-LATENCY: Write steering directly to input sender IMMEDIATELY
+        // ZERO-LATENCY: Write steering directly
         inputSender?.let { sender ->
             val val0 = if (abs(currentAngle) < deadzone) 0f else currentAngle
             sender.steering = (val0 * MAX_STEERING).toInt().coerceIn(-MAX_STEERING, MAX_STEERING).toShort()
@@ -72,10 +94,7 @@ class SteeringViewModel : ViewModel() {
     }
     
     fun updatePhysics() {
-        if (isTouching) {
-            // While touching, no physics — direct control (zero latency)
-            return
-        }
+        if (isTouching) return
         
         val dist = abs(currentAngle)
         
@@ -83,17 +102,14 @@ class SteeringViewModel : ViewModel() {
             currentAngle = 0f
             velocity = 0f
             smoothedOutput = smoothedOutput + (0f - smoothedOutput) * (1f - smoothing)
-            // Write zero back
             inputSender?.steering = 0
             return
         }
         
-        // Spring force with bell profile
         val bellFactor = sin(dist * PI.toFloat()).toFloat()
         val linearForce = -springStrength * currentAngle
         val totalForce = linearForce * (0.3f + 0.7f * bellFactor)
         
-        // Damping — stronger near center for quick settle
         val proximityDamp = if (dist < 0.15f) {
             damping * (1f + (0.15f - dist) / 0.15f * 4f)
         } else {
@@ -101,7 +117,6 @@ class SteeringViewModel : ViewModel() {
         }
         
         val dampForce = -proximityDamp * velocity
-        
         val acceleration = totalForce + dampForce
         velocity += (acceleration * DT).toFloat()
         currentAngle += (velocity * DT).toFloat()
@@ -109,10 +124,8 @@ class SteeringViewModel : ViewModel() {
         if (currentAngle > 1f) { currentAngle = 1f; velocity = -velocity * 0.05f }
         else if (currentAngle < -1f) { currentAngle = -1f; velocity = -velocity * 0.05f }
         
-        // Light smoothing only during spring return
         smoothedOutput = smoothedOutput + (currentAngle - smoothedOutput) * (1f - smoothing)
         
-        // Write spring-return output directly
         inputSender?.let { sender ->
             val val0 = if (abs(smoothedOutput) < deadzone) 0f else smoothedOutput
             sender.steering = (val0 * MAX_STEERING).toInt().coerceIn(-MAX_STEERING, MAX_STEERING).toShort()

@@ -83,7 +83,7 @@ fun VButtonView(
     ) {
         Text(
             text = button.label,
-            fontSize = if (size <= 44) 9.sp else 11.sp,
+            fontSize = if (size <= 44) 13.sp else 15.sp,
             fontWeight = FontWeight.Bold,
             color = if (isActive || isPressed) Color.White else Color(0xFF6A6A8A),
             textAlign = TextAlign.Center,
@@ -94,23 +94,23 @@ fun VButtonView(
 }
 
 /**
- * Default button layout for racing games.
- * Top row: A B X Y LB RB (face buttons + bumpers)
- * Bottom row: UP DN LT RT L R (d-pad + triggers + sticks)
+ * Default button layout with numbered buttons 1-12.
  */
 fun defaultButtons(): List<VButton> = listOf(
-    VButton(1,  "A",   Color(0xFF22C55E), action = 1),
-    VButton(2,  "B",   Color(0xFFEF4444), action = 2),
-    VButton(3,  "X",   Color(0xFF3B82F6), action = 3),
-    VButton(4,  "Y",   Color(0xFFF59E0B), action = 4),
-    VButton(5,  "LB",  Color(0xFF6366F1), action = 5),
-    VButton(6,  "RB",  Color(0xFF6366F1), action = 6),
-    VButton(7,  "UP",  Color(0xFF475569), action = 7),
-    VButton(8,  "DN",  Color(0xFF475569), action = 8),
-    VButton(9,  "LT",  Color(0xFF8B5CF6), action = 9),
-    VButton(10, "RT",  Color(0xFF8B5CF6), action = 10),
-    VButton(11, "L",   Color(0xFF475569), action = 11),
-    VButton(12, "R",   Color(0xFF475569), action = 12),
+    // Row 1: 1-6
+    VButton(1,  "1", Color(0xFF3A3A5E), action = 1),
+    VButton(2,  "2", Color(0xFF3A3A5E), action = 2),
+    VButton(3,  "3", Color(0xFF3A3A5E), action = 3),
+    VButton(4,  "4", Color(0xFF3A3A5E), action = 4),
+    VButton(5,  "5", Color(0xFF3A3A5E), action = 5),
+    VButton(6,  "6", Color(0xFF3A3A5E), action = 6),
+    // Row 2: 7-12
+    VButton(7,  "7", Color(0xFF3A3A5E), action = 7),
+    VButton(8,  "8", Color(0xFF3A3A5E), action = 8),
+    VButton(9,  "9", Color(0xFF3A3A5E), action = 9),
+    VButton(10, "10", Color(0xFF3A3A5E), action = 10),
+    VButton(11, "11", Color(0xFF3A3A5E), action = 11),
+    VButton(12, "12", Color(0xFF3A3A5E), action = 12),
 )
 
 /**
@@ -144,17 +144,14 @@ fun ButtonRow(
 }
 
 /**
- * Compact status bar for the controller screen.
+ * Compact status bar — connection info only, no GYRO toggle or EXIT button.
  */
 @Composable
 fun ControllerStatusBar(
-    gyroEnabled: Boolean,
     gyroAvailable: Boolean,
+    gyroActive: Boolean,
     connectedIp: String,
     packetCount: Int,
-    onGyroToggle: () -> Unit,
-    onDisconnect: () -> Unit,
-    onOpenSettings: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -168,7 +165,7 @@ fun ControllerStatusBar(
         // Left: connection status
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "\u25CF",
+                text = "●",
                 fontSize = 8.sp,
                 color = Color(0xFF22C55E)
             )
@@ -190,52 +187,19 @@ fun ControllerStatusBar(
         
         // Center: version
         Text(
-            text = "v0.6.1",
+            text = "v0.8.0-alpha",
             fontSize = 8.sp,
             color = Color(0xFF333333)
         )
         
-        // Right side buttons
+        // Right: gyro indicator (just status, not a toggle)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // GYRO toggle
             if (gyroAvailable) {
-                Box(
-                    modifier = Modifier
-                        .background(
-                            if (gyroEnabled) Color(0xFF6366F1) else Color(0xFF1E1E36),
-                            RoundedCornerShape(5.dp)
-                        )
-                        .padding(horizontal = 8.dp, vertical = 1.dp)
-                        .pointerInput(Unit) {
-                            detectTapGestures { onGyroToggle() }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "GYRO",
-                        fontSize = 7.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (gyroEnabled) Color.White else Color(0xFF555555)
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-            }
-            
-            // EXIT
-            Box(
-                modifier = Modifier
-                    .background(Color(0xFF2A1A1A), RoundedCornerShape(5.dp))
-                    .padding(horizontal = 8.dp, vertical = 1.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures { onDisconnect() }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
                 Text(
-                    text = "EXIT",
+                    text = if (gyroActive) "GYRO ON" else "GYRO OFF",
                     fontSize = 7.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFEF4444)
+                    color = if (gyroActive) Color(0xFF22D3EE) else Color(0xFF333333)
                 )
             }
         }

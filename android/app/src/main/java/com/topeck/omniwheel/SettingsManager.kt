@@ -53,7 +53,15 @@ class SettingsManager(context: Context) {
         get() = prefs.getInt("throttle_max", 255)
         set(v) = prefs.edit().putInt("throttle_max", v).apply()
     
+    var clutchEnabled: Boolean
+        get() = prefs.getBoolean("clutch_enabled", false)
+        set(v) = prefs.edit().putBoolean("clutch_enabled", v).apply()
+    
     // === GYROSCOPE ===
+    var gyroEnabled: Boolean
+        get() = prefs.getBoolean("gyro_enabled", false)
+        set(v) = prefs.edit().putBoolean("gyro_enabled", v).apply()
+    
     var gyroMaxTiltDeg: Float
         get() = prefs.getFloat("gyro_max_tilt", 25f)
         set(v) = prefs.edit().putFloat("gyro_max_tilt", v).apply()
