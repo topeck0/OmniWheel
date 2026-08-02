@@ -74,3 +74,6 @@ jobs:
             OmniWheel-android/app-release.apk
             OmniWheel-windows/OmniWheelPC.exe
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+          update_prerelease: true
+          make_latest: false
+          overwrite: true
