@@ -448,6 +448,10 @@ private fun SettingsToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    // Local state so the toggle updates visually immediately
+    var localChecked by remember { mutableStateOf(checked) }
+    LaunchedEffect(checked) { localChecked = checked }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -467,8 +471,11 @@ private fun SettingsToggle(
             )
         }
         Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
+            checked = localChecked,
+            onCheckedChange = {
+                localChecked = it
+                onCheckedChange(it)
+            },
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color(0xFF6366F1),
                 checkedTrackColor = Color(0xFF6366F1).copy(alpha = 0.5f)

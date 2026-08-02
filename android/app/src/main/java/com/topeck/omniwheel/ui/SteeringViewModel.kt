@@ -111,31 +111,27 @@ class SteeringViewModel : ViewModel() {
         
         val dist = abs(currentAngle)
         
-        if (dist < 0.001f) {
+        // Snap to zero when very close and nearly stopped
+        if (dist < 0.003f && abs(velocity) < 0.08f) {
             currentAngle = 0f
             velocity = 0f
-            smoothedOutput = smoothedOutput + (0f - smoothedOutput) * (1f - smoothing)
-            if (abs(smoothedOutput) < 0.0005f) smoothedOutput = 0f
+            smoothedOutput = 0f
             inputSender?.steering = 0
             publish()
             return
         }
         
-        val bellFactor = sin(dist * PI.toFloat()).toFloat()
-        val linearForce = -springStrength * currentAngle
-        val totalForce = linearForce * (0.3f + 0.7f * bellFactor)
+        // Constant spring force — no bell curve, pulls evenly at all positions
+        val springForce = -springStrength * currentAngle
         
-        val proximityDamp = if (dist < 0.15f) {
-            damping * (1f + (0.15f - dist) / 0.15f * 4f)
-        } else {
-            damping.toFloat()
-        }
+        // Constant damping — no proximity boost, smooth throughout
+        val dampForce = -damping * velocity
         
-        val dampForce = -proximityDamp * velocity
-        val acceleration = totalForce + dampForce
+        val acceleration = springForce + dampForce
         velocity += (acceleration * DT).toFloat()
         currentAngle += (velocity * DT).toFloat()
         
+        // Hard clamp at limits
         if (currentAngle > 1f) { currentAngle = 1f; velocity = -velocity * 0.05f }
         else if (currentAngle < -1f) { currentAngle = -1f; velocity = -velocity * 0.05f }
         
