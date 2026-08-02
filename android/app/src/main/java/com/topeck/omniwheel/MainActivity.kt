@@ -177,6 +177,7 @@ fun ControllerScreen(
     
     // Double-back-press state
     var backPressedOnce by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     
     // Handle double-back-press to go to connection screen
     BackHandler(enabled = true) {
@@ -185,8 +186,6 @@ fun ControllerScreen(
             onBack()
         } else {
             backPressedOnce = true
-            // Reset after 2 seconds if no second press
-            val scope = rememberCoroutineScope()
             scope.launch {
                 delay(2000)
                 backPressedOnce = false
