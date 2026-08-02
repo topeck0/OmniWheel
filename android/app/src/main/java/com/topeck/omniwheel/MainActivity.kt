@@ -186,6 +186,8 @@ fun ControllerScreen(
         }
     }
 
+    fun isActive(action: Int): Boolean = activeButtons.value.contains(action)
+
     BackHandler(enabled = true) {
         if (backPressedOnce) {
             backPressedOnce = false
@@ -270,10 +272,10 @@ fun ControllerScreen(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalAlignment = Alignment.Top
                     ) {
-                        VButtonView(btnMap[5]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[6]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[7]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[18]!!, activeButtons.value, onBtn, 42, settings.hapticFeedback)
+                        VButtonView(btnMap[5]!!, isActive(btnMap[5]!!.action), onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[6]!!, isActive(btnMap[6]!!.action), onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[7]!!, isActive(btnMap[7]!!.action), onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[18]!!, isActive(btnMap[18]!!.action), onBtn, 42, settings.hapticFeedback)
                     }
 
                     // Button 4 (lower-left of top row)
@@ -282,7 +284,7 @@ fun ControllerScreen(
                             .align(Alignment.CenterStart)
                             .padding(start = 2.dp, top = 30.dp)
                     ) {
-                        VButtonView(btnMap[4]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[4]!!, isActive(btnMap[4]!!.action), onBtn, 38, settings.hapticFeedback)
                     }
 
                     // Button 8 (below button 18)
@@ -291,7 +293,7 @@ fun ControllerScreen(
                             .align(Alignment.TopEnd)
                             .padding(end = 2.dp, top = 34.dp)
                     ) {
-                        VButtonView(btnMap[8]!!, activeButtons.value, onBtn, 42, settings.hapticFeedback)
+                        VButtonView(btnMap[8]!!, isActive(btnMap[8]!!.action), onBtn, 42, settings.hapticFeedback)
                     }
 
                     // Steering wheel (center)
@@ -316,7 +318,7 @@ fun ControllerScreen(
                             .align(Alignment.BottomStart)
                             .padding(start = 2.dp, bottom = 4.dp)
                     ) {
-                        VButtonView(btnMap[14]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[14]!!, isActive(btnMap[14]!!.action), onBtn, 38, settings.hapticFeedback)
                     }
                 }
 
@@ -334,9 +336,9 @@ fun ControllerScreen(
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        VButtonView(btnMap[1]!!, activeButtons.value, onBtn, 44, settings.hapticFeedback)
-                        VButtonView(btnMap[3]!!, activeButtons.value, onBtn, 44, settings.hapticFeedback)
-                        VButtonView(btnMap[2]!!, activeButtons.value, onBtn, 44, settings.hapticFeedback)
+                        VButtonView(btnMap[1]!!, isActive(btnMap[1]!!.action), onBtn, 44, settings.hapticFeedback)
+                        VButtonView(btnMap[3]!!, isActive(btnMap[3]!!.action), onBtn, 44, settings.hapticFeedback)
+                        VButtonView(btnMap[2]!!, isActive(btnMap[2]!!.action), onBtn, 44, settings.hapticFeedback)
                     }
 
                     // Middle row: 10, 15, 9
@@ -345,9 +347,9 @@ fun ControllerScreen(
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        VButtonView(btnMap[10]!!, activeButtons.value, onBtn, 40, settings.hapticFeedback)
-                        VButtonView(btnMap[15]!!, activeButtons.value, onBtn, 40, settings.hapticFeedback)
-                        VButtonView(btnMap[9]!!, activeButtons.value, onBtn, 40, settings.hapticFeedback)
+                        VButtonView(btnMap[10]!!, isActive(btnMap[10]!!.action), onBtn, 40, settings.hapticFeedback)
+                        VButtonView(btnMap[15]!!, isActive(btnMap[15]!!.action), onBtn, 40, settings.hapticFeedback)
+                        VButtonView(btnMap[9]!!, isActive(btnMap[9]!!.action), onBtn, 40, settings.hapticFeedback)
                     }
 
                     // Bottom area: 11, 12 side by side, 13 wide below, 17 to the right
@@ -356,16 +358,16 @@ fun ControllerScreen(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        VButtonView(btnMap[11]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[12]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[17]!!, activeButtons.value, onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[11]!!, isActive(btnMap[11]!!.action), onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[12]!!, isActive(btnMap[12]!!.action), onBtn, 38, settings.hapticFeedback)
+                        VButtonView(btnMap[17]!!, isActive(btnMap[17]!!.action), onBtn, 38, settings.hapticFeedback)
                     }
                     // Button 13 (wide, centered below 11+12)
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        WideButtonView(btnMap[13]!!, activeButtons.value, onBtn, widthDp = 140, heightDp = 34, hapticEnabled = settings.hapticFeedback)
+                        WideButtonView(btnMap[13]!!, isActive(btnMap[13]!!.action), onBtn, widthDp = 140, heightDp = 34, hapticEnabled = settings.hapticFeedback)
                     }
                 }
 
