@@ -23,6 +23,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.topeck.omniwheel.SettingsManager
 import com.topeck.omniwheel.network.DiscoveryClient
 import com.topeck.omniwheel.network.InputSender
 
@@ -30,6 +31,7 @@ import com.topeck.omniwheel.network.InputSender
 fun ConnectionScreen(
     discovery: DiscoveryClient,
     inputSender: InputSender,
+    settings: SettingsManager,
     onConnected: (String) -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -38,8 +40,8 @@ fun ConnectionScreen(
     var logText by remember { mutableStateOf("") }
     var connectingIp by remember { mutableStateOf<String?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
-    // Manual IP entry
-    var manualIp by remember { mutableStateOf("") }
+    // Manual IP entry — pre-filled from last used IP
+    var manualIp by remember { mutableStateOf(settings.lastUsedIp) }
     var isDirectConnecting by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -89,7 +91,7 @@ fun ConnectionScreen(
                     color = Color(0xFF6366F1)
                 )
                 Text(
-                    text = "v0.8.3-alpha  |  Phone-as-Steering-Wheel",
+                    text = "v0.8.4-alpha  |  Phone-as-Steering-Wheel",
                     fontSize = 12.sp,
                     color = Color(0xFF555555)
                 )
@@ -151,6 +153,7 @@ fun ConnectionScreen(
                     }
                     errorMsg = null
                     isDirectConnecting = true
+                    settings.lastUsedIp = ip
                     inputSender.disconnect()
                     inputSender.connectDirect(
                         ip,
@@ -265,6 +268,7 @@ fun ConnectionScreen(
                             if (connectingIp != null) return@DeviceCard
                             errorMsg = null
                             connectingIp = device.ipAddress
+                            settings.lastUsedIp = device.ipAddress
                             inputSender.disconnect()
                             inputSender.connect(device.ipAddress,
                                 onReady = {

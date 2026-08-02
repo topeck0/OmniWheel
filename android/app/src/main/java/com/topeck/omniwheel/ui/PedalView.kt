@@ -2,7 +2,8 @@ package com.topeck.omniwheel.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -61,22 +62,25 @@ fun PedalView(
                 .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xFF12122A))
                 .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = {
-                            isPressed.value = true
-                            val relY = 1f - (it.y / size.height).coerceIn(0f, 1f)
-                            onValueChange(relY)
-                        },
-                        onDrag = { change, _ ->
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        down.consume()
+                        isPressed.value = true
+                        val relY = 1f - (down.position.y / size.height).coerceIn(0f, 1f)
+                        onValueChange(relY)
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.first()
+                            if (!change.pressed) break
                             change.consume()
-                            val relY = 1f - (change.position.y / size.height).coerceIn(0f, 1f)
-                            onValueChange(relY)
-                        },
-                        onDragEnd = {
-                            isPressed.value = false
-                            onRelease()
+                            val newY = 1f - (change.position.y / size.height).coerceIn(0f, 1f)
+                            onValueChange(newY)
                         }
-                    )
+
+                        isPressed.value = false
+                        onRelease()
+                    }
                 },
             contentAlignment = Alignment.BottomCenter
         ) {

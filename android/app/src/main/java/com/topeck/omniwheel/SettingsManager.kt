@@ -121,6 +121,11 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean("haptic_feedback", true)
         set(v) = prefs.edit().putBoolean("haptic_feedback", v).apply()
     
+    // === MISC ===
+    var lastUsedIp: String
+        get() = prefs.getString("last_used_ip", "") ?: ""
+        set(v) = prefs.edit().putString("last_used_ip", v).apply()
+
     // === PROFILES ===
     var activeProfile: String
         get() = prefs.getString("active_profile", "Default") ?: "Default"
