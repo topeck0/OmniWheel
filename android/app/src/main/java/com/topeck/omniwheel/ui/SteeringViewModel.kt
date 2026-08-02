@@ -8,7 +8,7 @@ import kotlin.math.*
 /**
  * Rotation-based steering physics engine.
  * Visual rotation tracks the finger 1:1, clamped to ±maxAngleDeg.
- * Spring return is critically-damped with zero-crossing snap to prevent overshoot.
+ * Spring return with zero-crossing snap to prevent overshoot.
  */
 class SteeringViewModel : ViewModel() {
     
@@ -53,12 +53,10 @@ class SteeringViewModel : ViewModel() {
     
     private fun publish() {
         if (isTouching) {
-            // Visual follows finger, clamped to max range
             val rawDeg = accumulatedRad * 180f / PI.toFloat()
             _visualRotationDeg.value = rawDeg.coerceIn(-maxAngleDeg, maxAngleDeg)
             _displayAngle.value = currentAngle
         } else {
-            // Visual spring-returns: map smoothedOutput back to degrees
             _visualRotationDeg.value = smoothedOutput * maxAngleDeg
             _displayAngle.value = smoothedOutput
         }
@@ -67,11 +65,12 @@ class SteeringViewModel : ViewModel() {
     fun onRotationTouchStart(touchX: Float, touchY: Float) {
         isTouching = true
         prevTouchAngleRad = atan2(touchY, touchX)
-        angleAtTouchStart = currentAngle
-        // Start accumulatedRad from current visual position (no jump)
+        // FIX #2: Base BOTH from smoothedOutput so there's no mismatch
+        // during spring return — wheel starts exactly where it visually is
+        currentAngle = smoothedOutput
+        angleAtTouchStart = smoothedOutput
         accumulatedRad = smoothedOutput * maxAngleDeg * PI.toFloat() / 180f
         velocity = 0f
-        smoothedOutput = currentAngle
         publish()
     }
     
@@ -87,8 +86,11 @@ class SteeringViewModel : ViewModel() {
         accumulatedRad += deltaRad
         prevTouchAngleRad = newAngleRad
         
-        // Convert to normalized steering (-1..1)
+        // FIX #3: Clamp accumulatedRad to max range so it can't drift beyond
         val maxAngleRad = maxAngleDeg * PI.toFloat() / 180f
+        accumulatedRad = accumulatedRad.coerceIn(-maxAngleRad, maxAngleRad)
+        
+        // Convert to normalized steering (-1..1)
         val normalizedDelta = (accumulatedRad / maxAngleRad) * sensitivity
         currentAngle = (angleAtTouchStart + normalizedDelta).coerceIn(-1f, 1f)
         velocity = 0f
@@ -104,6 +106,9 @@ class SteeringViewModel : ViewModel() {
     
     fun onTouchEnd() {
         isTouching = false
+        // FIX #1: Sync smoothedOutput to currentAngle so there's no visual jump
+        // when transitioning from touch-tracking to spring-return mode
+        smoothedOutput = currentAngle
         publish()
     }
     
@@ -137,8 +142,7 @@ class SteeringViewModel : ViewModel() {
         if (currentAngle > 1f) { currentAngle = 1f; velocity = -velocity * 0.05f }
         else if (currentAngle < -1f) { currentAngle = -1f; velocity = -velocity * 0.05f }
         
-        // Zero-crossing snap: if we crossed zero while returning, snap to 0
-        // This prevents the -20° overshoot and the visual "skip"
+        // Zero-crossing snap
         if (prevAngle * currentAngle < 0f) {
             currentAngle = 0f
             velocity = 0f
