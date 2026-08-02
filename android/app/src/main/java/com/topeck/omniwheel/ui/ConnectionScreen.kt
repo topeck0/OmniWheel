@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +38,9 @@ fun ConnectionScreen(
     var logText by remember { mutableStateOf("") }
     var connectingIp by remember { mutableStateOf<String?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+    // Manual IP entry
+    var manualIp by remember { mutableStateOf("") }
+    var isDirectConnecting by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         discovery.onDeviceFound = { device ->
@@ -84,7 +89,7 @@ fun ConnectionScreen(
                     color = Color(0xFF6366F1)
                 )
                 Text(
-                    text = "v0.8.0-alpha  |  Phone-as-Steering-Wheel",
+                    text = "v0.8.1-alpha  |  Phone-as-Steering-Wheel",
                     fontSize = 12.sp,
                     color = Color(0xFF555555)
                 )
@@ -106,7 +111,76 @@ fun ConnectionScreen(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+
+        // ===== MANUAL IP QUICK CONNECT =====
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = manualIp,
+                onValueChange = { manualIp = it },
+                label = { Text("IP Address", fontSize = 11.sp, color = Color(0xFF6A6A8A)) },
+                placeholder = { Text("192.168.1.100", fontSize = 11.sp, color = Color(0xFF3A3A5A)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontSize = 14.sp,
+                    color = Color.White,
+                    fontWeight = FontWeight.Medium
+                ),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFF6366F1),
+                    unfocusedBorderColor = Color(0xFF2A2A44),
+                    cursorColor = Color(0xFF6366F1),
+                    focusedLabelColor = Color(0xFF6366F1),
+                    unfocusedContainerColor = Color(0xFF12122A),
+                    focusedContainerColor = Color(0xFF14142E),
+                ),
+                modifier = Modifier.weight(1f).height(48.dp)
+            )
+
+            Button(
+                onClick = {
+                    val ip = manualIp.trim()
+                    if (ip.isBlank() || !ip.contains(".")) {
+                        errorMsg = "Enter a valid IP address"
+                        return@Button
+                    }
+                    errorMsg = null
+                    isDirectConnecting = true
+                    inputSender.disconnect()
+                    inputSender.connectDirect(
+                        ip,
+                        onReady = {
+                            isDirectConnecting = false
+                            onConnected(ip)
+                        },
+                        onError = { err ->
+                            isDirectConnecting = false
+                            errorMsg = "Direct connect failed: $err"
+                        }
+                    )
+                },
+                enabled = !isDirectConnecting && manualIp.trim().isNotBlank(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF6366F1),
+                    disabledContainerColor = Color(0xFF1E1E36)
+                ),
+                modifier = Modifier.height(48.dp)
+            ) {
+                Text(
+                    text = if (isDirectConnecting) "..." else "GO",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDirectConnecting) Color(0xFF555555) else Color.White
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
 
         // Scanning indicator
         val pulseAlpha by rememberInfiniteTransition().animateFloat(
@@ -127,13 +201,14 @@ fun ConnectionScreen(
             Spacer(Modifier.width(8.dp))
             Text(
                 text = if (connectingIp != null) "Connecting to $connectingIp..."
+                        else if (isDirectConnecting) "Direct connecting..."
                         else "Scanning for PCs on WiFi...",
                 fontSize = 13.sp,
                 color = Color(0xFF888888)
             )
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
         // Error message
         errorMsg?.let { err ->
@@ -150,7 +225,7 @@ fun ConnectionScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.4f)
+                    .weight(0.35f)
                     .background(Color(0xFF14142A), MaterialTheme.shapes.medium),
                 contentAlignment = Alignment.Center
             ) {
@@ -168,7 +243,7 @@ fun ConnectionScreen(
                         textAlign = TextAlign.Center
                     )
                     Text(
-                        text = "Make sure OmniWheel PC is running\non the same WiFi network",
+                        text = "Use the IP field above to connect manually\nor make sure OmniWheel PC is running\non the same WiFi network",
                         fontSize = 11.sp,
                         color = Color(0xFF3A3A5A),
                         textAlign = TextAlign.Center
@@ -179,7 +254,7 @@ fun ConnectionScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.4f),
+                    .weight(0.35f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(devices.value, key = { it.ipAddress }) { device ->

@@ -286,6 +286,50 @@ class InputSender(private val context: Context) {
         }
     }
 
+    fun connectDirect(ip: String, onReady: () -> Unit, onError: ((String) -> Unit)? = null) {
+        targetIp = ip
+        stopInternal()
+
+        try {
+            // WiFi lock
+            try {
+                val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                wifiLock = wifi?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "omniwheel:input")?.also {
+                    it.setReferenceCounted(false)
+                    it.acquire()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "WiFi lock failed: ${e.message}")
+            }
+
+            udpSocket = DatagramSocket().also { sock ->
+                sock.sendBufferSize = 64 * 1024
+                sock.soTimeout = 0
+            }
+
+            running = true
+            _sendCount = 0
+            _skipCount = 0
+            _errorCount = 0
+            setState(State.CONNECTED)
+            onLog?.invoke("Direct connect to $targetIp (no handshake)")
+
+            val addr = InetSocketAddress(targetIp, targetPort)
+            sendPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
+
+            startSendLoop()
+            startHeartbeat()
+            onReady()
+
+        } catch (e: Exception) {
+            val msg = "Direct connect failed: ${e.message}"
+            onLog?.invoke(msg)
+            setState(State.DISCONNECTED)
+            onError?.invoke(msg)
+            cleanup()
+        }
+    }
+
     fun disconnect() {
         stopInternal()
         setState(State.DISCONNECTED)

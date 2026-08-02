@@ -27,7 +27,8 @@ fun SteeringWheelView(
     showAngleText: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    val angle by remember { derivedStateOf { viewModel.outputAngle } }
+    // Read Compose State directly — triggers recomposition when ViewModel updates it
+    val angle by viewModel.displayAngle
     val isTouching = remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
