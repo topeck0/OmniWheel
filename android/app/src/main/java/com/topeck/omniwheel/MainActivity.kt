@@ -126,7 +126,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
-                            enterTransition = entering togetherWith exiting
+                            entering togetherWith exiting
                         },
                         label = "screenTransition"
                     ) { currentScreen ->
