@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0c0c16; font-family:'Segoe UI',system-ui,sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; padding:20px; }
+.window { width:540px; background:#0c0c16; border-radius:8px; overflow:hidden; border:1px solid #2a2a44; box-shadow:0 20px 60px rgba(0,0,0,0.6); }
+.titlebar { background:#16162e; padding:8px 14px; display:flex; align-items:center; gap:8px; }
+.titlebar .dot { width:10px; height:10px; border-radius:50%; }
+.titlebar .dot.r { background:#ef4444; } .titlebar .dot.y { background:#f59e0b; } .titlebar .dot.g { background:#22c55e; }
+.titlebar span { color:#666; font-size:11px; margin-left:8px; }
+.header { background:#161628; padding:14px 16px; display:flex; align-items:center; }
+.header h1 { color:#6366f1; font-size:18px; font-weight:700; }
+.header .ver { color:#464660; font-size:8px; margin-left:8px; margin-top:6px; }
+.header .status { margin-left:auto; display:flex; align-items:center; gap:6px; }
+.header .dot2 { font-size:12px; color:#22c55e; }
+.header .statustxt { color:#82829b; font-size:9px; }
+.section-label { color:#464650; font-size:8px; font-weight:600; letter-spacing:1px; padding:6px 16px 2px; }
+.devices { padding:6px 16px 10px; }
+.dev-list { background:#121220; border-radius:6px; height:80px; padding:6px 10px; }
+.dev-item { color:#dcdce6; font-size:9px; padding:5px 8px; border-radius:4px; margin-bottom:3px; background:#1c1c34; }
+.dev-item .ip { color:#6366f1; margin-left:8px; font-size:8px; }
+.input-section { padding:4px 16px 14px; }
+.input-row { display:flex; align-items:center; margin-bottom:10px; }
+.input-row .label { width:65px; font-size:8px; font-weight:600; color:#82829b; flex-shrink:0; }
+.input-row .val { width:40px; font-size:9px; color:#dcdce6; font-family:'Cascadia Code',monospace; flex-shrink:0; margin-left:6px; }
+.bar-bg { flex:1; height:8px; background:#232340; border-radius:4px; margin-left:10px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:4px; width:0; transition:width 0.3s; }
+.bar-fill.str { background: #6366f1; width:65%; }
+.bar-fill.gas { background: #22c55e; width:42%; }
+.bar-fill.brk { background: #ef4444; width:0; }
+.bar-fill.clu { background: #f59e0b; width:18%; }
+.info-row { display:flex; padding:2px 16px 8px; gap:20px; }
+.info-row .btns { color:#6366f1; font-size:9px; }
+.info-row .pkts { color:#22c55e; font-size:8px; }
+.info-row .vjoy { color:#22c55e; font-size:8px; margin-left:auto; }
+.log-section { padding:0 16px 14px; }
+.log-box { background:#121220; border-radius:6px; height:110px; padding:8px 10px; overflow:hidden; }
+.log-line { color:#46465a; font-size:7.5px; font-family:'Cascadia Code',monospace; line-height:1.6; }
+.log-line:first-child { color:#6366f1; }
+</style></head><body>
+<div class="window">
+  <div class="titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><span>OmniWheel PC</span></div>
+  <div class="header">
+    <h1>OmniWheel</h1>
+    <div class="ver">v0.8.5</div>
+    <div class="status"><span class="dot2">●</span><span class="statustxt">Connected: 192.168.1.105</span></div>
+  </div>
+  <div class="section-label">DISCOVERED PHONES</div>
+  <div class="devices"><div class="dev-list"><div class="dev-item">Samsung S24 Ultra <span class="ip">192.168.1.105</span></div></div></div>
+  <div class="section-label">LIVE INPUT</div>
+  <div class="input-section">
+    <div class="input-row"><div class="label" style="color:#82829b">STEERING</div><div class="val">0.650</div><div class="bar-bg"><div class="bar-fill str"></div></div></div>
+    <div class="input-row"><div class="label" style="color:#22c55e">GAS</div><div class="val">42%</div><div class="bar-bg"><div class="bar-fill gas"></div></div></div>
+    <div class="input-row"><div class="label" style="color:#ef4444">BRAKE</div><div class="val">0%</div><div class="bar-bg"><div class="bar-fill brk"></div></div></div>
+    <div class="input-row"><div class="label" style="color:#f59e0b">CLUTCH</div><div class="val">18%</div><div class="bar-bg"><div class="bar-fill clu"></div></div></div>
+  </div>
+  <div class="info-row">
+    <span class="btns">Buttons: 1, 3</span>
+    <span class="pkts">240/s</span>
+    <span class="vjoy">vJoy: Active (Device 1)</span>
+  </div>
+  <div class="section-label">LOG</div>
+  <div class="log-section"><div class="log-box">
+    <div class="log-line">[22:45:01.234] OmniWheel PC v0.8.5 started (protocol v2)</div>
+    <div class="log-line">[22:45:01.235] Ports: Discovery=19700  Input=19701</div>
+    <div class="log-line">[22:45:03.891] Found: Samsung S24 Ultra @ 192.168.1.105</div>
+    <div class="log-line">[22:45:05.123] CONNECT from 192.168.1.105, sent ACK</div>
+    <div class="log-line">[22:45:05.234] PC responded (ACK received)</div>
+    <div class="log-line">[22:45:05.235] Sending input at 240Hz (delta-optimized)</div>
+    <div class="log-line">[22:45:05.236] Device connected: 192.168.1.105</div>
+    <div class="log-line">[22:45:10.500] Input: str=21234 pk/s=240 crc_err=0</div>
+  </div></div>
+</div>
+</body></html>

@@ -51,12 +51,12 @@ jobs:
       - name: Build EXE
         run: |
           cd windows/src/OmniWheelPC
-          dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:EnableWindowsTargeting=true
+          dotnet publish -c Release -p:EnableWindowsTargeting=true
       
       - uses: actions/upload-artifact@v4
         with:
           name: OmniWheel-windows
-          path: windows/src/OmniWheelPC/bin/Release/net8.0-windows/win-x64/publish/OmniWheelPC.exe
+          path: windows/src/OmniWheelPC/bin/Release/net8.0-windows/publish/OmniWheelPC.exe
 
   release:
     needs: [build-android, build-windows]

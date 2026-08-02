@@ -9,10 +9,7 @@
     <Version>0.5.0-alpha</Version>
     <AssemblyName>OmniWheelPC</AssemblyName>
     <RootNamespace>OmniWheelPC</RootNamespace>
-    <SelfContained>true</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishSingleFile>true</PublishSingleFile>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <SelfContained>false</SelfContained>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
