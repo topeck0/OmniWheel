@@ -7,9 +7,9 @@ import kotlin.math.*
 
 /**
  * Rotation-based steering physics engine.
- * The user rotates the wheel like a real steering wheel — touch anywhere on the wheel
- * and rotate clockwise/counter-clockwise. The angle delta from the wheel center
- * determines steering input.
+ * Uses INCREMENTAL rotation tracking: each touch move computes the angle
+ * delta from the previous touch position, so multi-rotation works correctly
+ * without wrap-around jumps.
  *
  * ZERO-LATENCY: Touch moves write directly to InputSender immediately.
  */
@@ -19,9 +19,6 @@ class SteeringViewModel : ViewModel() {
         private const val MAX_STEERING = 32767
         private const val PHYSICS_FPS = 240
         private const val DT = 1.0 / PHYSICS_FPS
-        // How many radians of wheel rotation = full steering lock (-1..1)
-        // ~2.5 full rotations (900 deg) maps to full lock
-        private const val RAD_PER_FULL_LOCK = (900f * PI.toFloat() / 180f) / 1.0f
     }
     
     var maxAngleDeg = 900f
@@ -39,47 +36,49 @@ class SteeringViewModel : ViewModel() {
     private var smoothedOutput = 0f
     private var isTouching = false
     
-    // Rotation tracking
-    private var touchStartAngleRad = 0f  // angle from wheel center at touch start
-    private var angleAtTouchStart = 0f  // steering value at touch start
+    // Incremental rotation tracking
+    private var prevTouchAngleRad = 0f
+    private var angleAtTouchStart = 0f
+    private var accumulatedRad = 0f
     
     val outputAngle: Float get() = if (isTouching) currentAngle else smoothedOutput
     val rawAngle: Float get() = currentAngle
     
     /**
      * Called when touch starts on the wheel.
-     * @param touchX touch position X relative to wheel center
-     * @param touchY touch position Y relative to wheel center
+     * Records the initial angle from wheel center.
      */
     fun onRotationTouchStart(touchX: Float, touchY: Float) {
         isTouching = true
-        touchStartAngleRad = atan2(touchY, touchX)
+        prevTouchAngleRad = atan2(touchY, touchX)
         angleAtTouchStart = currentAngle
+        accumulatedRad = 0f
         velocity = 0f
         smoothedOutput = currentAngle
     }
     
     /**
      * Called when touch drags on the wheel.
-     * Computes angle delta from wheel center to determine rotation.
-     * @param touchX current touch X relative to wheel center
-     * @param touchY current touch Y relative to wheel center
+     * Uses INCREMENTAL delta from previous touch position.
+     * This correctly handles continuous multi-rotation.
      */
     fun onRotationTouchMove(touchX: Float, touchY: Float) {
         if (!isTouching) return
         
-        val currentAngleRad = atan2(touchY, touchX)
-        var deltaRad = currentAngleRad - touchStartAngleRad
+        val newAngleRad = atan2(touchY, touchX)
+        var deltaRad = newAngleRad - prevTouchAngleRad
         
-        // Handle wrap-around (e.g., from -PI to +PI or vice versa)
+        // Handle wrap-around (angle jumps from PI to -PI or vice versa)
         if (deltaRad > PI.toFloat()) deltaRad -= 2f * PI.toFloat()
         if (deltaRad < -PI.toFloat()) deltaRad += 2f * PI.toFloat()
         
-        // Convert rotation to steering: normalize so that ~2.5 rotations = full lock
-        val maxAngleRad = (maxAngleDeg * PI.toFloat() / 180f)
-        val deltaNorm = (deltaRad / maxAngleRad) * sensitivity
+        accumulatedRad += deltaRad
+        prevTouchAngleRad = newAngleRad
         
-        currentAngle = (angleAtTouchStart + deltaNorm).coerceIn(-1f, 1f)
+        // Convert accumulated rotation to normalized steering (-1..1)
+        val maxAngleRad = (maxAngleDeg * PI.toFloat() / 180f)
+        val normalizedDelta = (accumulatedRad / maxAngleRad) * sensitivity
+        currentAngle = (angleAtTouchStart + normalizedDelta).coerceIn(-1f, 1f)
         velocity = 0f
         
         // ZERO-LATENCY: Write steering directly

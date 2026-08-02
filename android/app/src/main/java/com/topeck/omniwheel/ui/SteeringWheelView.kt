@@ -69,7 +69,7 @@ fun SteeringWheelView(
             val baseRadius = minOf(cx, cy) * 0.78f
             val rimW = baseRadius * 0.22f
             val hubR = baseRadius * 0.24f
-            val rotDeg = angle * 90f
+            val rotDeg = angle * 180f
 
             val activeColor = if (isGyroActive) Color(0xFF22D3EE) else Color(0xFF6366F1)
             val engaged = isTouching.value || isGyroActive

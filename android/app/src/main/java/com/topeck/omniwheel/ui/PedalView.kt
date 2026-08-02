@@ -19,12 +19,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/**
- * Horizontal pedal slider — designed to sit ABOVE the steering wheel.
- * Drag left-to-right to increase value.
- */
 @Composable
-fun HorizontalPedalView(
+fun PedalView(
     label: String,
     color: Color,
     value: Float,
@@ -40,41 +36,41 @@ fun HorizontalPedalView(
         if (value <= 0f) displayValue.value = 0f
     }
     
-    Row(
-        modifier = modifier.height(36.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        modifier = modifier
+            .fillMaxHeight(0.88f)
+            .width(68.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Bottom
     ) {
-        // Label
         Text(
             text = label,
-            fontSize = 9.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             color = if (isPressed.value) color else Color(0xFF555555),
             textAlign = TextAlign.Center,
-            modifier = Modifier.width(40.dp),
-            letterSpacing = 0.5.sp
+            letterSpacing = 1.sp
         )
         
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.height(4.dp))
         
-        // Horizontal slider track
         Box(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(0.65f)
-                .clip(RoundedCornerShape(10.dp))
+                .fillMaxWidth(0.72f)
+                .fillMaxHeight(0.78f)
+                .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xFF12122A))
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = {
                             isPressed.value = true
-                            val relX = (it.x / size.width).coerceIn(0f, 1f)
-                            onValueChange(relX)
+                            val relY = 1f - (it.y / size.height).coerceIn(0f, 1f)
+                            onValueChange(relY)
                         },
                         onDrag = { change, _ ->
                             change.consume()
-                            val relX = (change.position.x / size.width).coerceIn(0f, 1f)
-                            onValueChange(relX)
+                            val relY = 1f - (change.position.y / size.height).coerceIn(0f, 1f)
+                            onValueChange(relY)
                         },
                         onDragEnd = {
                             isPressed.value = false
@@ -82,59 +78,59 @@ fun HorizontalPedalView(
                         }
                     )
                 },
-            contentAlignment = Alignment.CenterStart
+            contentAlignment = Alignment.BottomCenter
         ) {
-            // Fill from left
-            val fillWidth = displayValue.value.coerceIn(0f, 1f)
-            if (fillWidth > 0.01f) {
+            val fillHeight = displayValue.value.coerceIn(0f, 1f)
+            if (fillHeight > 0.01f) {
                 Box(
                     modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(fillWidth)
-                        .clip(RoundedCornerShape(10.dp))
+                        .fillMaxWidth()
+                        .fillMaxHeight(fillHeight)
+                        .clip(RoundedCornerShape(18.dp))
                         .background(
-                            Brush.horizontalGradient(
+                            Brush.verticalGradient(
                                 colors = listOf(
-                                    if (isPressed.value) color else color.copy(alpha = 0.7f),
-                                    color.copy(alpha = if (isPressed.value) 0.5f else 0.25f)
+                                    color.copy(alpha = if (isPressed.value) 0.5f else 0.25f),
+                                    if (isPressed.value) color else color.copy(alpha = 0.7f)
                                 )
                             )
                         )
                 )
             }
             
-            // Grip lines
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val lineSpacingPx = 14f
-                val lineCount = (size.width / lineSpacingPx).toInt()
+                val lineSpacingPx = 12f
+                val lineCount = (size.height / lineSpacingPx).toInt()
                 for (i in 1 until lineCount) {
-                    val x = i * lineSpacingPx
+                    val y = size.height - i * lineSpacingPx
                     drawLine(
                         color = Color.White.copy(alpha = 0.04f),
-                        start = Offset(x, size.height * 0.15f),
-                        end = Offset(x, size.height * 0.85f),
+                        start = Offset(size.width * 0.15f, y),
+                        end = Offset(size.width * 0.85f, y),
                         strokeWidth = 1f
                     )
                 }
             }
             
-            // Value text
             Text(
                 text = "${(displayValue.value * 100).toInt()}",
-                fontSize = 12.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (displayValue.value > 0.01f) Color.White else Color(0xFF444444)
+                color = if (displayValue.value > 0.01f) Color.White else Color(0xFF444444),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(bottom = 20.dp)
             )
         }
     }
 }
 
 /**
- * Horizontal pedals row: Gas + Brake (and optional Clutch).
- * Designed to sit above the steering wheel.
+ * Vertical pedals column on the far right side.
+ * Gas on right, Brake on left, optional Clutch on far left.
  */
 @Composable
-fun HorizontalPedalsRow(
+fun VerticalPedalsColumn(
     throttle: Float,
     brake: Float,
     clutch: Float,
@@ -145,39 +141,37 @@ fun HorizontalPedalsRow(
     onThrottleRelease: () -> Unit,
     onBrakeRelease: () -> Unit,
     onClutchRelease: () -> Unit,
+    pedalWidthDp: Int = 68
 ) {
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .fillMaxHeight()
+            .padding(horizontal = 2.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.Bottom
     ) {
         if (clutchEnabled) {
-            HorizontalPedalView(
+            PedalView(
                 label = "CLUTCH",
                 color = Color(0xFFF59E0B),
                 value = clutch,
                 onValueChange = onClutchChange,
-                onRelease = onClutchRelease,
-                modifier = Modifier.weight(1f)
+                onRelease = onClutchRelease
             )
         }
-        HorizontalPedalView(
+        PedalView(
             label = "BRAKE",
             color = Color(0xFFEF4444),
             value = brake,
             onValueChange = onBrakeChange,
-            onRelease = onBrakeRelease,
-            modifier = Modifier.weight(1f)
+            onRelease = onBrakeRelease
         )
-        HorizontalPedalView(
+        PedalView(
             label = "GAS",
             color = Color(0xFF22C55E),
             value = throttle,
             onValueChange = onThrottleChange,
-            onRelease = onThrottleRelease,
-            modifier = Modifier.weight(1f)
+            onRelease = onThrottleRelease
         )
     }
 }
