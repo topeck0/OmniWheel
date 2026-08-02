@@ -1,0 +1,36 @@
+# Build outputs
+*.apk
+*.aab
+*.exe
+*.dll
+bin/
+obj/
+publish/
+
+# IDE
+.idea/
+.vs/
+*.suo
+*.user
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Gradle
+.gradle/
+local.properties
+build/
+
+# .NET
+nuget.config
+*.nupkg
+
+# OmniWheel specific
+download/
+upload/
+scripts/
+worklog.md
+*.log
+download/
