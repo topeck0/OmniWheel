@@ -299,7 +299,7 @@ fun ControllerScreen(
     LaunchedEffect(Unit) {
         while (true) {
             inputSender.throttle = if (settings.pedalReturnOnRelease || throttle > 0f)
-                (throttle * settings.throttleMaxByte / 255f).toInt().coerceIn(0, 255).toByte() else 0
+                (throttle * settings.throttleMaxByte).toInt().coerceIn(0, 255).toByte() else 0
             inputSender.brake = (brake * 255).toInt().toByte()
             inputSender.clutch = (clutch * 255).toInt().toByte()
             inputSender.activeButtons = activeButtons.value
