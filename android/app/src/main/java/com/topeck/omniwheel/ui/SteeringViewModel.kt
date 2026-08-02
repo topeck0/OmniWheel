@@ -12,6 +12,8 @@ import kotlin.math.*
  * without wrap-around jumps.
  *
  * ZERO-LATENCY: Touch moves write directly to InputSender immediately.
+ *
+ * Compose-observable: uses MutableState so Canvas recomposes on every angle change.
  */
 class SteeringViewModel : ViewModel() {
     
@@ -30,10 +32,9 @@ class SteeringViewModel : ViewModel() {
     
     var inputSender: InputSender? = null
     
-    // State
+    // Internal state (plain vars for speed in tight loops)
     private var currentAngle = 0f  // -1..1 normalized steering
     private var velocity = 0f
-    private var smoothedOutput = 0f
     private var isTouching = false
     
     // Incremental rotation tracking
@@ -41,8 +42,20 @@ class SteeringViewModel : ViewModel() {
     private var angleAtTouchStart = 0f
     private var accumulatedRad = 0f
     
+    // Compose-observable output — this is what the UI reads to redraw the wheel
+    private val _displayAngle = mutableStateOf(0f)
+    val displayAngle: State<Float> = _displayAngle
+
+    // Smoothed output for when not touching (spring return)
+    private var smoothedOutput = 0f
+    
     val outputAngle: Float get() = if (isTouching) currentAngle else smoothedOutput
     val rawAngle: Float get() = currentAngle
+    
+    /** Push current value to Compose state so Canvas redraws */
+    private fun publishAngle() {
+        _displayAngle.value = if (isTouching) currentAngle else smoothedOutput
+    }
     
     /**
      * Called when touch starts on the wheel.
@@ -55,6 +68,7 @@ class SteeringViewModel : ViewModel() {
         accumulatedRad = 0f
         velocity = 0f
         smoothedOutput = currentAngle
+        publishAngle()
     }
     
     /**
@@ -86,10 +100,13 @@ class SteeringViewModel : ViewModel() {
             val val0 = if (abs(currentAngle) < deadzone) 0f else currentAngle
             sender.steering = (val0 * MAX_STEERING).toInt().coerceIn(-MAX_STEERING, MAX_STEERING).toShort()
         }
+        
+        publishAngle()
     }
     
     fun onTouchEnd() {
         isTouching = false
+        publishAngle()
     }
     
     fun updatePhysics() {
@@ -102,6 +119,7 @@ class SteeringViewModel : ViewModel() {
             velocity = 0f
             smoothedOutput = smoothedOutput + (0f - smoothedOutput) * (1f - smoothing)
             inputSender?.steering = 0
+            publishAngle()
             return
         }
         
@@ -129,6 +147,8 @@ class SteeringViewModel : ViewModel() {
             val val0 = if (abs(smoothedOutput) < deadzone) 0f else smoothedOutput
             sender.steering = (val0 * MAX_STEERING).toInt().coerceIn(-MAX_STEERING, MAX_STEERING).toShort()
         }
+        
+        publishAngle()
     }
     
     fun getSteeringShort(): Short {
@@ -141,6 +161,7 @@ class SteeringViewModel : ViewModel() {
         velocity = 0f
         smoothedOutput = 0f
         isTouching = false
+        publishAngle()
     }
 }
 
