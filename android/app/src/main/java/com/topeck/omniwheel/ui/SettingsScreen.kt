@@ -371,7 +371,7 @@ private fun SettingsSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 4.dp)
-                    .background(Color(0xFF0F0F22)
+                    .background(Color(0xFF0F0F22))
             ) {
                 Spacer(Modifier.height(8.dp))
                 content()
