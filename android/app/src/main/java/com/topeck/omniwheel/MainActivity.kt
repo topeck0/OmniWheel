@@ -22,6 +22,8 @@ import com.topeck.omniwheel.network.InputSender
 import com.topeck.omniwheel.sensor.GyroManager
 import com.topeck.omniwheel.ui.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 
 enum class AppScreen { CONNECTION, CONTROLLER, SETTINGS }
 
@@ -184,7 +186,8 @@ fun ControllerScreen(
         } else {
             backPressedOnce = true
             // Reset after 2 seconds if no second press
-            kotlinx.coroutines.GlobalScope.launch {
+            val scope = rememberCoroutineScope()
+            scope.launch {
                 delay(2000)
                 backPressedOnce = false
             }
