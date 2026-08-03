@@ -116,7 +116,7 @@ public class MainForm : Form
             _input.Start();
             _uiTimer.Start();
             _vJoyTimer.Start();
-            Log("OmniWheel PC v0.8.6 started (protocol v2)");
+            Log("OmniWheel PC v0.8.7 started (protocol v2)");
             Log("Ports: Discovery=19700  Input=19701");
             Log("Allow UDP 19701 in Windows Firewall if no input works");
         };
@@ -179,7 +179,7 @@ public class MainForm : Form
         // ===== HEADER (matches HTML) =====
         var header = new Panel { Bounds = new Rectangle(0, y, 540, 48), BackColor = BgHeader };
         _titleLabel = new Label { Text = "OmniWheel", Font = FntTitle, ForeColor = Accent, Location = new Point(pad, 12), AutoSize = true };
-        _versionLabel = new Label { Text = "v0.8.6", Font = FntVer, ForeColor = TextMuted, Location = new Point(145, 22), AutoSize = true };
+        _versionLabel = new Label { Text = "v0.8.7", Font = FntVer, ForeColor = TextMuted, Location = new Point(145, 22), AutoSize = true };
         _statusDot = new Label { Text = "●", Font = new Font("Segoe UI", 12f), ForeColor = TextMuted, Location = new Point(370, 16), AutoSize = true };
         _statusLabel = new Label { Text = "Waiting for phone...", Font = FntStatus, ForeColor = TextDim, Location = new Point(388, 18), AutoSize = true };
         header.Controls.AddRange(new Control[] { _titleLabel, _versionLabel, _statusDot, _statusLabel });
