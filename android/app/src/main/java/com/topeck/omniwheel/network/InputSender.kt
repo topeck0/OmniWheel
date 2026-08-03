@@ -7,24 +7,26 @@ import java.net.*
 import kotlin.concurrent.thread
 
 /**
- * Optimized input sender with buffer reuse and delta-based sending.
+ * Ultra-aggressive input sender optimized for worst-case networks.
  *
- * Key optimizations:
- * - Pre-allocated send buffer (no per-packet allocation)
- * - Delta detection: skips sending if state unchanged
- * - Configurable send rate
- * - Connection handshake with ACK
- * - Socket error recovery
- * - WiFi lock for reliable UDP
+ * Key strategies for fighting congestion/old routers:
+ * - 500Hz send rate (every 2ms)
+ * - IPTOS_LOWDELAY socket flag (QoS priority)
+ * - 256KB send buffer
+ * - Redundant sends: critical changes (steering/pedals) sent 2x
+ * - Forced periodic sends every 50ms even if unchanged (keeps NAT/routing warm)
+ * - Pre-allocated reusable buffers (zero GC pressure)
+ * - WiFi HIGH_PERF lock
+ * - Fast connect: 3 probes @ 80ms + 2s ACK wait
  */
 class InputSender(private val context: Context) {
     companion object {
         private const val TAG = "InputSender"
-        private const val PROBE_COUNT = 5
-        private const val PROBE_INTERVAL_MS = 150L
-        private const val ACK_TIMEOUT_MS = 3000L
-        // Max packet size: header(8) + payload(13) + crc(2) = 23
+        private const val PROBE_COUNT = 3
+        private const val PROBE_INTERVAL_MS = 80L
+        private const val ACK_TIMEOUT_MS = 2000L
         private const val MAX_PACKET_SIZE = 32
+        private const val FORCE_SEND_INTERVAL = 50 // ms: send even if unchanged
     }
 
     private var udpSocket: DatagramSocket? = null
@@ -32,11 +34,12 @@ class InputSender(private val context: Context) {
     private var sendThread: Thread? = null
     private var heartbeatThread: Thread? = null
     private var wifiLock: WifiManager.WifiLock? = null
-    private var sendPacket: DatagramPacket? = null // reused every send
+    private var sendPacket: DatagramPacket? = null
+    private var dupPacket: DatagramPacket? = null // duplicate for redundancy
 
     var targetIp: String = ""
     var targetPort: Int = Protocol.INPUT_PORT
-    var sendRateHz: Int = 240
+    var sendRateHz: Int = 500 // aggressive default
 
     // Current input state (written by UI/gyro thread, read by send thread)
     @Volatile var steering: Short = 0
@@ -58,6 +61,7 @@ class InputSender(private val context: Context) {
 
     private var _sendCount = 0
     private var _skipCount = 0
+    private var _dupCount = 0
     private var _errorCount = 0
     val sendCount: Int get() = _sendCount
     val skipCount: Int get() = _skipCount
@@ -68,12 +72,23 @@ class InputSender(private val context: Context) {
         onStateChanged?.invoke(s)
     }
 
+    private fun configureSocket(sock: DatagramSocket) {
+        try {
+            sock.sendBufferSize = 256 * 1024
+            sock.soTimeout = 0
+            // QoS: IPTOS_LOWDELAY (0x10) - tells routers to prioritize these packets
+            sock.trafficClass = 0x10
+        } catch (e: Exception) {
+            Log.w(TAG, "Socket config: ${e.message}")
+        }
+    }
+
     fun connect(ip: String, onReady: () -> Unit, onError: ((String) -> Unit)? = null) {
         targetIp = ip
         stopInternal()
 
         try {
-            // WiFi lock
+            // WiFi lock - HIGH_PERF prevents power saving latency
             try {
                 val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
                 wifiLock = wifi?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "omniwheel:input")?.also {
@@ -84,21 +99,19 @@ class InputSender(private val context: Context) {
                 Log.w(TAG, "WiFi lock failed: ${e.message}")
             }
 
-            udpSocket = DatagramSocket().also { sock ->
-                sock.sendBufferSize = 64 * 1024
-                sock.soTimeout = 0
-            }
+            udpSocket = DatagramSocket().also { configureSocket(it) }
 
             running = true
             _sendCount = 0
             _skipCount = 0
+            _dupCount = 0
             _errorCount = 0
             setState(State.CONNECTING)
             onLog?.invoke("Connecting to $targetIp...")
 
             thread(name = "Connector") {
                 try {
-                    // Phase 1: Send CONNECT probes (use v1 protocol for discovery compat)
+                    // Phase 1: Fast CONNECT probes
                     repeat(PROBE_COUNT) { i ->
                         if (!running) return@thread
                         val probe = Protocol.buildPacket(Protocol.TYPE_CONNECT)
@@ -136,11 +149,11 @@ class InputSender(private val context: Context) {
                     }
 
                     setState(State.CONNECTED)
-                    onLog?.invoke("Sending input at ${sendRateHz}Hz (delta-optimized)")
+                    onLog?.invoke("Sending at ${sendRateHz}Hz (aggressive + redundant)")
 
-                    // Pre-allocate reusable send packet
                     val addr = InetSocketAddress(targetIp, targetPort)
                     sendPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
+                    dupPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
 
                     startSendLoop()
                     startHeartbeat()
@@ -169,22 +182,22 @@ class InputSender(private val context: Context) {
         sendThread = thread(name = "InputSender") {
             val intervalNs = 1_000_000_000L / sendRateHz
             var nextTime = System.nanoTime()
+            var lastForceSendTime = 0L
 
-            // Delta tracking: cache previous sent values
+            // Delta tracking
             var prevSteering: Short = Short.MIN_VALUE
             var prevThrottle: Byte = -1
             var prevBrake: Byte = -1
             var prevClutch: Byte = -1
             var prevGyroX: Short = Short.MIN_VALUE
             var prevGyroY: Short = Short.MIN_VALUE
-                var prevGyroZ: Short = Short.MIN_VALUE
+            var prevGyroZ: Short = Short.MIN_VALUE
             var prevButtons: Set<Int> = emptySet()
 
             while (running) {
                 try {
                     val now = System.nanoTime()
                     if (now >= nextTime) {
-                        // Read current volatile values atomically
                         val curSteering = steering
                         val curThrottle = throttle
                         val curBrake = brake
@@ -195,7 +208,6 @@ class InputSender(private val context: Context) {
                         val curButtons = activeButtons
                         val curGyro = gyroActive
 
-                        // DELTA CHECK: only send if something changed
                         val changed = curSteering != prevSteering ||
                             curThrottle != prevThrottle ||
                             curBrake != prevBrake ||
@@ -203,13 +215,16 @@ class InputSender(private val context: Context) {
                             curButtons != prevButtons ||
                             (curGyro && (curGyroX != prevGyroX || curGyroY != prevGyroY || curGyroZ != prevGyroZ))
 
-                        if (changed) {
+                        val nowMs = System.currentTimeMillis()
+                        val forceSend = (nowMs - lastForceSendTime) >= FORCE_SEND_INTERVAL
+
+                        if (changed || forceSend) {
                             val packet = Protocol.buildInputPacket(
                                 curSteering, curThrottle, curBrake, curClutch,
                                 curGyroX, curGyroY, curGyroZ,
                                 curButtons, includeGyro = curGyro
                             )
-                            // Reuse DatagramPacket
+                            // Primary send
                             sendPacket?.let { sp ->
                                 System.arraycopy(packet, 0, sp.data, 0, packet.size)
                                 sp.length = packet.size
@@ -217,7 +232,20 @@ class InputSender(private val context: Context) {
                             }
                             _sendCount++
 
-                            // Update previous values
+                            // REDUNDANT SEND on critical change: duplicate immediately
+                            // This fights packet loss on congested/old routers
+                            if (changed) {
+                                dupPacket?.let { dp ->
+                                    System.arraycopy(packet, 0, dp.data, 0, packet.size)
+                                    dp.length = packet.size
+                                    udpSocket?.send(dp)
+                                }
+                                _dupCount++
+                            }
+
+                            if (forceSend) lastForceSendTime = nowMs
+
+                            // Update previous
                             prevSteering = curSteering
                             prevThrottle = curThrottle
                             prevBrake = curBrake
@@ -247,10 +275,10 @@ class InputSender(private val context: Context) {
                         if (_errorCount <= 3) onLog?.invoke("Socket error: ${e.message}")
                         try {
                             udpSocket?.close()
-                            udpSocket = DatagramSocket().also { it.sendBufferSize = 64 * 1024 }
-                            // Recreate the send packet with new socket's address
+                            udpSocket = DatagramSocket().also { configureSocket(it) }
                             val addr = InetSocketAddress(targetIp, targetPort)
                             sendPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
+                            dupPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
                             onLog?.invoke("Socket recreated after error")
                         } catch (re: Exception) {
                             onLog?.invoke("Cannot recreate socket: ${re.message}")
@@ -264,7 +292,7 @@ class InputSender(private val context: Context) {
                     }
                 }
             }
-            Log.d(TAG, "Send loop ended: $_sendCount sent, $_skipCount skipped (delta), $_errorCount errors")
+            Log.d(TAG, "Send loop ended: $_sendCount sent, $_dupCount redundant, $_skipCount skipped, $_errorCount errors")
         }
     }
 
@@ -272,7 +300,7 @@ class InputSender(private val context: Context) {
         heartbeatThread = thread(name = "Heartbeat") {
             while (running) {
                 try {
-                    Thread.sleep(3000) // Reduced from 1s to 3s
+                    Thread.sleep(3000)
                     if (running && udpSocket != null) {
                         val hb = Protocol.buildHeartbeatPacket()
                         val addr = InetSocketAddress(targetIp, Protocol.INPUT_PORT)
@@ -291,7 +319,6 @@ class InputSender(private val context: Context) {
         stopInternal()
 
         try {
-            // WiFi lock
             try {
                 val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
                 wifiLock = wifi?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "omniwheel:input")?.also {
@@ -302,20 +329,19 @@ class InputSender(private val context: Context) {
                 Log.w(TAG, "WiFi lock failed: ${e.message}")
             }
 
-            udpSocket = DatagramSocket().also { sock ->
-                sock.sendBufferSize = 64 * 1024
-                sock.soTimeout = 0
-            }
+            udpSocket = DatagramSocket().also { configureSocket(it) }
 
             running = true
             _sendCount = 0
             _skipCount = 0
+            _dupCount = 0
             _errorCount = 0
             setState(State.CONNECTED)
-            onLog?.invoke("Direct connect to $targetIp (no handshake)")
+            onLog?.invoke("Direct connect to $targetIp (aggressive, no handshake)")
 
             val addr = InetSocketAddress(targetIp, targetPort)
             sendPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
+            dupPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
 
             startSendLoop()
             startHeartbeat()
@@ -331,8 +357,6 @@ class InputSender(private val context: Context) {
     }
 
     fun disconnect() {
-        // FIX #5: Send all-zeros packet before disconnecting so the PC
-        // releases steering, throttle, brake, and all buttons immediately
         if (running && udpSocket != null) {
             try {
                 val zeroPacket = Protocol.buildInputPacket(
@@ -340,8 +364,7 @@ class InputSender(private val context: Context) {
                     activeButtons = emptySet()
                 )
                 val addr = InetSocketAddress(targetIp, targetPort)
-                // Send 3 times to make sure it arrives
-                repeat(3) {
+                repeat(5) { // send 5 times to guarantee arrival
                     udpSocket?.send(DatagramPacket(zeroPacket, zeroPacket.size, addr))
                 }
             } catch (_: Exception) {}
@@ -358,6 +381,7 @@ class InputSender(private val context: Context) {
         sendThread = null
         heartbeatThread = null
         sendPacket = null
+        dupPacket = null
         cleanup()
     }
 

@@ -44,7 +44,19 @@ public class MainForm : Form
     private static readonly Font FntLog = new("Cascadia Code", 7.5f);
     private static readonly Font FntBtn = new("Segoe UI", 9f, FontStyle.Bold);
     
+    // Layout constants
+    private const int Pad = 16;
+    private const int HeaderH = 48;
+    private const int DeviceListH = 72;
+    private const int DeviceSectionH = 80; // label + list
+    private const int InputLabelH = 22;
+    private const int BarRowH = 26;
+    private const int InfoRowH = 24;
+    private const int LogLabelH = 16;
+    private const int MinBarW = 150;
+    
     // Controls
+    private Panel _header = null!;
     private Label _statusDot = null!;
     private Label _statusLabel = null!;
     private Label _titleLabel = null!;
@@ -52,36 +64,34 @@ public class MainForm : Form
     private ListBox _deviceList = null!;
     private Button _refreshBtn = null!;
     private Button _readyBtn = null!;
-    private Label _fwLabel = null!;
     private TextBox _logBox = null!;
+    private Label _secLabel2 = null!;
+    private Label _vjoyLabel = null!;
+    private Label _secLabel3 = null!;
     
-    // Input bars
-    private Panel _strBarFg = null!;
-    private Label _strVal = null!;
-    private Panel _gasBarFg = null!;
-    private Label _gasVal = null!;
-    private Panel _brkBarFg = null!;
-    private Label _brkVal = null!;
-    private Panel _cluBarFg = null!;
-    private Label _cluVal = null!;
+    // Input bars: [label, value, barBg, barFg] x4 (steering, gas, brake, clutch)
+    private readonly Label[] _barLabels = new Label[4];
+    private readonly Label[] _barVals = new Label[4];
+    private readonly Panel[] _barBgs = new Panel[4];
+    private readonly Panel[] _barFgs = new Panel[4];
+    
     private Label _buttonsLabel = null!;
     private Label _packetLabel = null!;
-    private Label _vjoyLabel = null!;
     
     private readonly System.Windows.Forms.Timer _uiTimer;
     private int _packetCount;
     private int _lastPacketCount;
     private int _packetsPerSecond;
+    private bool _layoutBuilt;
     
     public MainForm()
     {
         Text = "OmniWheel PC";
-        Size = new Size(540, 520);
-        MinimumSize = new Size(440, 480);
+        ClientSize = new Size(540, 520);
+        MinimumSize = new Size(440, 420);
         BackColor = BgDark;
-        FormBorderStyle = FormBorderStyle.FixedSingle;
+        FormBorderStyle = FormBorderStyle.Sizable;
         StartPosition = FormStartPosition.CenterScreen;
-        MaximizeBox = false;
         DoubleBuffered = true;
         
         _discovery = new DiscoveryServer { DeviceName = Environment.MachineName };
@@ -108,6 +118,7 @@ public class MainForm : Form
         _uiTimer.Tick += UpdateUI;
         
         BuildUI();
+        Resize += (_, _) => Relayout();
         
         Load += (s, e) =>
         {
@@ -116,7 +127,7 @@ public class MainForm : Form
             _input.Start();
             _uiTimer.Start();
             _vJoyTimer.Start();
-            Log("OmniWheel PC v0.8.7 started (protocol v2)");
+            Log("OmniWheel PC v0.8.8 started (protocol v2)");
             Log("Ports: Discovery=19700  Input=19701");
             Log("Allow UDP 19701 in Windows Firewall if no input works");
         };
@@ -173,56 +184,53 @@ public class MainForm : Form
     
     private void BuildUI()
     {
-        var pad = 16;
         int y = 0;
+        var w = ClientSize.Width;
         
-        // ===== HEADER (matches HTML) =====
-        var header = new Panel { Bounds = new Rectangle(0, y, 540, 48), BackColor = BgHeader };
-        _titleLabel = new Label { Text = "OmniWheel", Font = FntTitle, ForeColor = Accent, Location = new Point(pad, 12), AutoSize = true };
-        _versionLabel = new Label { Text = "v0.8.7", Font = FntVer, ForeColor = TextMuted, Location = new Point(145, 22), AutoSize = true };
-        _statusDot = new Label { Text = "●", Font = new Font("Segoe UI", 12f), ForeColor = TextMuted, Location = new Point(370, 16), AutoSize = true };
-        _statusLabel = new Label { Text = "Waiting for phone...", Font = FntStatus, ForeColor = TextDim, Location = new Point(388, 18), AutoSize = true };
-        header.Controls.AddRange(new Control[] { _titleLabel, _versionLabel, _statusDot, _statusLabel });
-        Controls.Add(header);
-        y += 48;
+        // ===== HEADER =====
+        _header = new Panel { Bounds = new Rectangle(0, y, w, HeaderH), BackColor = BgHeader };
+        _titleLabel = new Label { Text = "OmniWheel", Font = FntTitle, ForeColor = Accent, Location = new Point(Pad, 12), AutoSize = true };
+        _versionLabel = new Label { Text = "v0.8.8", Font = FntVer, ForeColor = TextMuted, Location = new Point(145, 22), AutoSize = true };
+        _statusDot = new Label { Text = "●", Font = new Font("Segoe UI", 12f), ForeColor = TextMuted, Location = new Point(w - 170, 16), AutoSize = true };
+        _statusLabel = new Label { Text = "Waiting for phone...", Font = FntStatus, ForeColor = TextDim, Location = new Point(w - 150, 18), AutoSize = true };
+        _header.Controls.AddRange(new Control[] { _titleLabel, _versionLabel, _statusDot, _statusLabel });
+        Controls.Add(_header);
+        y += HeaderH;
         
-        // ===== DISCOVERED PHONES section =====
-        var secLabel1 = new Label { Text = "DISCOVERED PHONES", Font = FntSection, ForeColor = SectionLabel, Location = new Point(pad, y + 6), AutoSize = true };
+        // ===== DISCOVERED PHONES =====
+        var secLabel1 = new Label { Text = "DISCOVERED PHONES", Font = FntSection, ForeColor = SectionLabel, Location = new Point(Pad, y + 6), AutoSize = true };
         Controls.Add(secLabel1);
         y += 22;
         
         _deviceList = new ListBox
         {
-            Bounds = new Rectangle(pad, y, 410, 72),
+            Bounds = new Rectangle(Pad, y, w - Pad * 2 - 95, DeviceListH),
             BackColor = BgDeviceList, ForeColor = TextMain,
             BorderStyle = BorderStyle.None, Font = FntDevItem,
             SelectionMode = SelectionMode.One,
             ItemHeight = 24
         };
-        // Custom draw device items
         _deviceList.DrawMode = DrawMode.OwnerDrawFixed;
         _deviceList.DrawItem += (s, e) =>
         {
             e.DrawBackground();
             if (e.Index < 0) return;
             var text = _deviceList.Items[e.Index]?.ToString() ?? "";
-            // Draw background rect for item
             using var bgBrush = new SolidBrush(BgDeviceItem);
             e.Graphics.FillRectangle(bgBrush, e.Bounds.X + 2, e.Bounds.Y + 1, e.Bounds.Width - 4, e.Bounds.Height - 3);
-            // Name
             var parts = text.Split('(');
             e.Graphics.DrawString(parts[0].Trim(), FntDevItem, Brushes.White, e.Bounds.X + 10, e.Bounds.Y + 4);
-            // IP
             if (parts.Length > 1)
                 e.Graphics.DrawString("(" + parts[1], FntDevIP, new SolidBrush(Accent), e.Bounds.X + 10, e.Bounds.Y + 18);
             e.DrawFocusRectangle();
         };
         Controls.Add(_deviceList);
         
+        var btnX = w - Pad - 85;
         _refreshBtn = new Button
         {
             Text = "Refresh", Font = FntBtn, Size = new Size(85, 28),
-            Location = new Point(438, y + 4), BackColor = Color.FromArgb(28, 28, 50), ForeColor = TextDim,
+            Location = new Point(btnX, y + 4), BackColor = Color.FromArgb(28, 28, 50), ForeColor = TextDim,
             FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
             FlatAppearance = { BorderSize = 1, BorderColor = Color.FromArgb(42, 42, 68) }
         };
@@ -237,7 +245,7 @@ public class MainForm : Form
         _readyBtn = new Button
         {
             Text = "Ready", Font = FntBtn, Size = new Size(85, 28),
-            Location = new Point(438, y + 38), BackColor = Color.FromArgb(99, 102, 241, 50), ForeColor = Accent,
+            Location = new Point(btnX, y + 38), BackColor = Color.FromArgb(99, 102, 241, 50), ForeColor = Accent,
             FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
             FlatAppearance = { BorderSize = 1, BorderColor = Accent }
         };
@@ -248,73 +256,111 @@ public class MainForm : Form
             _statusDot.ForeColor = Yellow;
         };
         Controls.Add(_readyBtn);
-        y += 80;
+        y += DeviceListH + 8;
         
-        // ===== LIVE INPUT section =====
-        var secLabel2 = new Label { Text = "LIVE INPUT", Font = FntSection, ForeColor = SectionLabel, Location = new Point(pad, y + 2), AutoSize = true };
-        var vjoyRight = new Label { Text = "vJoy: --", Font = FntInfoSm, ForeColor = TextMuted, Location = new Point(440, y + 2), AutoSize = true };
-        _vjoyLabel = vjoyRight;
-        Controls.Add(secLabel2);
-        Controls.Add(vjoyRight);
-        y += 22;
+        // ===== LIVE INPUT =====
+        _secLabel2 = new Label { Text = "LIVE INPUT", Font = FntSection, ForeColor = SectionLabel, Location = new Point(Pad, y + 2), AutoSize = true };
+        _vjoyLabel = new Label { Text = "vJoy: --", Font = FntInfoSm, ForeColor = TextMuted, Location = new Point(w - Pad - 100, y + 2), AutoSize = true };
+        Controls.Add(_secLabel2);
+        Controls.Add(_vjoyLabel);
+        y += InputLabelH;
         
-        int barW = 360;
-        int labelX = pad;
-        int valX = pad + 68;
-        int barX = pad + 120;
-        int rowH = 26;
+        // Bar data: label text, color
+        var barData = new (string name, Color color, string unit)[4]
+        {
+            ("STEERING", TextDim, ""),
+            ("GAS", Green, "%"),
+            ("BRAKE", Red, "%"),
+            ("CLUTCH", Yellow, "%")
+        };
+        var barColors = new[] { Accent, Green, Red, Yellow };
         
-        // Steering
-        var strLabel = new Label { Text = "STEERING", Font = FntInput, ForeColor = TextDim, Location = new Point(labelX, y + 4), AutoSize = true };
-        _strVal = new Label { Text = "0.000", Font = FntVal, ForeColor = TextMain, Location = new Point(valX, y + 3), AutoSize = true };
-        var strBarBg = CreateBarBg(barW); strBarBg.Location = new Point(barX, y + 7);
-        _strBarFg = CreateBarFill(Accent, strBarBg);
-        Controls.AddRange(new Control[] { strLabel, _strVal, strBarBg });
-        y += rowH;
+        int barW = Math.Max(w - Pad * 2 - 120, MinBarW);
         
-        // Gas
-        var gasLabel = new Label { Text = "GAS", Font = FntInput, ForeColor = Green, Location = new Point(labelX, y + 4), AutoSize = true };
-        _gasVal = new Label { Text = "0%", Font = FntVal, ForeColor = TextMain, Location = new Point(valX, y + 3), AutoSize = true };
-        var gasBarBg = CreateBarBg(barW); gasBarBg.Location = new Point(barX, y + 7);
-        _gasBarFg = CreateBarFill(Green, gasBarBg);
-        Controls.AddRange(new Control[] { gasLabel, _gasVal, gasBarBg });
-        y += rowH;
+        for (int i = 0; i < 4; i++)
+        {
+            var (name, color, _) = barData[i];
+            _barLabels[i] = new Label { Text = name, Font = FntInput, ForeColor = color, Location = new Point(Pad, y + 4), AutoSize = true };
+            _barVals[i] = new Label { Text = i == 0 ? "0.000" : "0%", Font = FntVal, ForeColor = TextMain, Location = new Point(Pad + 68, y + 3), AutoSize = true };
+            _barBgs[i] = CreateBarBg(barW);
+            _barBgs[i].Location = new Point(Pad + 120, y + 7);
+            _barBgs[i].Tag = i; // store index for resize
+            _barFgs[i] = CreateBarFill(barColors[i], _barBgs[i]);
+            _barFgs[i].Tag = i;
+            Controls.AddRange(new Control[] { _barLabels[i], _barVals[i], _barBgs[i] });
+            y += BarRowH;
+        }
+        y += 4;
         
-        // Brake
-        var brkLabel = new Label { Text = "BRAKE", Font = FntInput, ForeColor = Red, Location = new Point(labelX, y + 4), AutoSize = true };
-        _brkVal = new Label { Text = "0%", Font = FntVal, ForeColor = TextMain, Location = new Point(valX, y + 3), AutoSize = true };
-        var brkBarBg = CreateBarBg(barW); brkBarBg.Location = new Point(barX, y + 7);
-        _brkBarFg = CreateBarFill(Red, brkBarBg);
-        Controls.AddRange(new Control[] { brkLabel, _brkVal, brkBarBg });
-        y += rowH;
-        
-        // Clutch
-        var cluLabel = new Label { Text = "CLUTCH", Font = FntInput, ForeColor = Yellow, Location = new Point(labelX, y + 4), AutoSize = true };
-        _cluVal = new Label { Text = "0%", Font = FntVal, ForeColor = TextMain, Location = new Point(valX, y + 3), AutoSize = true };
-        var cluBarBg = CreateBarBg(barW); cluBarBg.Location = new Point(barX, y + 7);
-        _cluBarFg = CreateBarFill(Yellow, cluBarBg);
-        Controls.AddRange(new Control[] { cluLabel, _cluVal, cluBarBg });
-        y += rowH + 4;
-        
-        // Info row: Buttons, Packets, vJoy
-        _buttonsLabel = new Label { Text = "Buttons: --", Font = FntInfo, ForeColor = TextDim, Location = new Point(pad, y), AutoSize = true };
-        _packetLabel = new Label { Text = "--/s", Font = FntInfoSm, ForeColor = Green, Location = new Point(280, y), AutoSize = true };
+        // Info row
+        _buttonsLabel = new Label { Text = "Buttons: --", Font = FntInfo, ForeColor = TextDim, Location = new Point(Pad, y), AutoSize = true };
+        _packetLabel = new Label { Text = "--/s", Font = FntInfoSm, ForeColor = Green, Location = new Point(Pad + 264, y), AutoSize = true };
         Controls.AddRange(new Control[] { _buttonsLabel, _packetLabel });
-        y += 24;
+        y += InfoRowH;
         
-        // ===== LOG section =====
-        var secLabel3 = new Label { Text = "LOG", Font = FntSection, ForeColor = SectionLabel, Location = new Point(pad, y), AutoSize = true };
-        Controls.Add(secLabel3);
-        y += 16;
+        // ===== LOG =====
+        _secLabel3 = new Label { Text = "LOG", Font = FntSection, ForeColor = SectionLabel, Location = new Point(Pad, y), AutoSize = true };
+        Controls.Add(_secLabel3);
+        y += LogLabelH;
         
         _logBox = new TextBox
         {
             Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-            Location = new Point(pad, y), Width = 508, Height = 100,
+            Location = new Point(Pad, y), Width = w - Pad * 2, Height = 100,
             BackColor = BgLog, ForeColor = TextDim,
             BorderStyle = BorderStyle.None, Font = FntLog
         };
         Controls.Add(_logBox);
+        
+        _layoutBuilt = true;
+    }
+    
+    private void Relayout()
+    {
+        if (!_layoutBuilt) return;
+        var w = ClientSize.Width;
+        var h = ClientSize.Height;
+        SuspendLayout();
+        
+        try
+        {
+            // Header stretches full width
+            _header.Width = w;
+            _statusDot.Location = new Point(w - 170, 16);
+            _statusLabel.Location = new Point(w - 150, 18);
+            
+            // Device list stretches, buttons stay on right
+            int y = HeaderH + 22;
+            _deviceList.Width = w - Pad * 2 - 95;
+            int btnX = w - Pad - 85;
+            _refreshBtn.Location = new Point(btnX, y + 4);
+            _readyBtn.Location = new Point(btnX, y + 38);
+            
+            // LIVE INPUT label
+            y += DeviceListH + 8;
+            _vjoyLabel.Location = new Point(w - Pad - 100, y + 2);
+            y += InputLabelH;
+            
+            // Bars stretch horizontally
+            int barW = Math.Max(w - Pad * 2 - 120, MinBarW);
+            for (int i = 0; i < 4; i++)
+            {
+                _barBgs[i].Width = barW;
+                // Clamp fill width to new bar width
+                if (_barFgs[i].Width > barW) _barFgs[i].Width = barW;
+                y += BarRowH;
+            }
+            
+            // Log box fills remaining space
+            y += 4 + InfoRowH + LogLabelH;
+            int logH = Math.Max(h - y - Pad, 40);
+            _logBox.Width = w - Pad * 2;
+            _logBox.Height = logH;
+        }
+        finally
+        {
+            ResumeLayout(false);
+        }
     }
     
     private void OnDeviceFound(DiscoveredDevice device)
@@ -344,34 +390,35 @@ public class MainForm : Form
     private void UpdateUI(object? sender, EventArgs e)
     {
         var s = _input.CurrentState;
+        var barW = _barBgs[0].Width;
         
         // Steering
         float str = s.NormalizedSteering;
-        _strVal.Text = $"{str:F3}";
-        _strVal.ForeColor = Math.Abs(str) > 0.01f ? Accent : TextMain;
-        _strBarFg.Width = Math.Min((int)(Math.Abs(str) * 360), 360);
-        _strBarFg.BackColor = Accent;
+        _barVals[0].Text = $"{str:F3}";
+        _barVals[0].ForeColor = Math.Abs(str) > 0.01f ? Accent : TextMain;
+        _barFgs[0].Width = Math.Min((int)(Math.Abs(str) * barW), barW);
+        _barFgs[0].BackColor = Accent;
         
         // Gas
         float gas = s.NormalizedThrottle;
-        _gasVal.Text = $"{(int)(gas * 100)}%";
-        _gasVal.ForeColor = gas > 0.01f ? Green : TextMain;
-        _gasBarFg.Width = (int)(gas * 360);
-        _gasBarFg.BackColor = Green;
+        _barVals[1].Text = $"{(int)(gas * 100)}%";
+        _barVals[1].ForeColor = gas > 0.01f ? Green : TextMain;
+        _barFgs[1].Width = (int)(gas * barW);
+        _barFgs[1].BackColor = Green;
         
         // Brake
         float brk = s.NormalizedBrake;
-        _brkVal.Text = $"{(int)(brk * 100)}%";
-        _brkVal.ForeColor = brk > 0.01f ? Red : TextMain;
-        _brkBarFg.Width = (int)(brk * 360);
-        _brkBarFg.BackColor = Red;
+        _barVals[2].Text = $"{(int)(brk * 100)}%";
+        _barVals[2].ForeColor = brk > 0.01f ? Red : TextMain;
+        _barFgs[2].Width = (int)(brk * barW);
+        _barFgs[2].BackColor = Red;
         
         // Clutch
         float clu = s.NormalizedClutch;
-        _cluVal.Text = $"{(int)(clu * 100)}%";
-        _cluVal.ForeColor = clu > 0.01f ? Yellow : TextMain;
-        _cluBarFg.Width = (int)(clu * 360);
-        _cluBarFg.BackColor = Yellow;
+        _barVals[3].Text = $"{(int)(clu * 100)}%";
+        _barVals[3].ForeColor = clu > 0.01f ? Yellow : TextMain;
+        _barFgs[3].Width = (int)(clu * barW);
+        _barFgs[3].BackColor = Yellow;
         
         // Buttons — vJoy numbers
         var pressed = new List<string>();

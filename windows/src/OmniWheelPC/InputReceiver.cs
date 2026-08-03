@@ -4,11 +4,12 @@ using System.Net.Sockets;
 namespace OmniWheelPC.Network;
 
 /// <summary>
-/// Optimized input receiver.
+/// Ultra-low-latency input receiver.
 /// - Reuses a single InputState (no per-packet allocation)
 /// - Supports v1 and v2 protocol headers
 /// - Uses CRC lookup table
-/// - Only logs first packets and periodic summaries
+/// - Large socket buffer for burst absorption
+/// - DontFragment + TTL=255 for aggressive delivery
 /// </summary>
 public class InputReceiver : IDisposable
 {
@@ -39,12 +40,18 @@ public class InputReceiver : IDisposable
         if (_running) return;
         _running = true;
         _cts = new CancellationTokenSource();
+        
         _udp = new UdpClient(Protocol.InputPort);
-        _recvBuf = new byte[64]; // max packet size: 8 + 13 + 2 = 23 bytes
+        _udp.Client.ReceiveBufferSize = 512 * 1024;  // 512KB receive buffer
+        _udp.Client.DontFragment = true;
+        _udp.Client.Ttl = 255;
+        _udp.EnableBroadcast = true;
+        
+        _recvBuf = new byte[64];
 
         _ = WatchdogAsync(_cts.Token);
         _task = Task.Run(RunAsync, _cts.Token);
-        OnLog?.Invoke($"Input receiver listening on port {Protocol.InputPort} (v2 optimized)");
+        OnLog?.Invoke($"Input receiver listening on port {Protocol.InputPort} (aggressive mode, 512KB buf)");
     }
 
     private async Task WatchdogAsync(CancellationToken ct)
@@ -147,25 +154,21 @@ public class InputReceiver : IDisposable
         CurrentState.Brake = data[off + 3];
         CurrentState.Clutch = data[off + 4];
 
-        // Detect payload format:
-        // v2: payload 5 bytes = no gyro, 11 bytes = with gyro, then 2 bytes buttons
-        // v1: always 11 bytes gyro + variable buttons
-        if (payloadLen >= 13) // 5 + 6 gyro + 2 buttons = 13 (v2 with gyro)
+        if (payloadLen >= 13)
         {
             CurrentState.GyroX = (short)(data[off + 5] | (data[off + 6] << 8));
             CurrentState.GyroY = (short)(data[off + 7] | (data[off + 8] << 8));
             CurrentState.GyroZ = (short)(data[off + 9] | (data[off + 10] << 8));
-            // Buttons at offset 11
             ParseButtons(data, off + 11, Math.Min(2, payloadLen - 11));
         }
-        else if (payloadLen >= 7) // 5 + 2 buttons = 7 (v2 no gyro)
+        else if (payloadLen >= 7)
         {
             CurrentState.GyroX = 0;
             CurrentState.GyroY = 0;
             CurrentState.GyroZ = 0;
             ParseButtons(data, off + 5, Math.Min(2, payloadLen - 5));
         }
-        else // v1 fallback: always 11 bytes gyro + buttons
+        else
         {
             CurrentState.GyroX = (short)(data[off + 5] | (data[off + 6] << 8));
             CurrentState.GyroY = (short)(data[off + 7] | (data[off + 8] << 8));
@@ -181,7 +184,6 @@ public class InputReceiver : IDisposable
     /// </summary>
     private void ParseButtons(byte[] data, int offset, int length)
     {
-        // Clear all first
         Array.Clear(CurrentState.ButtonStates, 0, CurrentState.ButtonStates.Length);
         
         for (int i = 0; i < length && i < 2; i++)
@@ -220,10 +222,7 @@ public class InputState
     public short GyroY { get; set; }
     public short GyroZ { get; set; }
     
-    /// <summary>Fixed 16-element array for buttons (reused, never reallocated).</summary>
     public bool[] ButtonStates { get; } = new bool[16];
-    
-    /// <summary>Legacy property for compatibility.</summary>
     public bool[] Buttons => ButtonStates;
     
     public DateTime Timestamp { get; set; }
