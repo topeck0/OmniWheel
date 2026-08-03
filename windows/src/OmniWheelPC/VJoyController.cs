@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace OmniWheelPC.Network;
@@ -9,6 +10,39 @@ namespace OmniWheelPC.Network;
 /// </summary>
 public class VJoyController : IDisposable
 {
+    // Resolve vJoyInterface.dll from known install paths
+    // (required because PublishSingleFile extracts EXE to temp dir,
+    //  and vJoy DLL is not in the standard DLL search path)
+    static VJoyController()
+    {
+        NativeLibrary.SetDllImportResolver(Assembly.GetExecutingAssembly(), (libraryName, assembly, searchPath) =>
+        {
+            if (libraryName != "vJoyInterface.dll") return IntPtr.Zero;
+
+            // Known vJoy install locations (x64)
+            var candidates = new[]
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + @"\vJoy\x64\vJoyInterface.dll",
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + @"\vJoy\x64\vJoyInterface.dll",
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + @"\vJoy\x86\vJoyInterface.dll",
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) + @"\vJoy\x86\vJoyInterface.dll",
+                // Some installers put it in System32/SysWOW64
+                Environment.GetFolderPath(Environment.SpecialFolder.System) + @"\vJoyInterface.dll",
+            };
+
+            foreach (var path in candidates)
+            {
+                if (NativeLibrary.TryLoad(path, out var handle))
+                {
+                    return handle;
+                }
+            }
+
+            // Fall back to default search
+            return NativeLibrary.TryLoad(libraryName, assembly, searchPath, out var h) ? h : IntPtr.Zero;
+        });
+    }
+
     [DllImport("vJoyInterface.dll", CallingConvention = CallingConvention.StdCall)]
     private static extern bool vJoyEnabled();
 
@@ -57,6 +91,8 @@ public class VJoyController : IDisposable
 
     private bool _acquired = false;
     private bool _vJoyInstalled = false;
+    private string _initError = "";
+    public string InitError => _initError;
 
     // Dirty tracking: only update when values change
     private long _prevSteering = long.MinValue;
@@ -79,7 +115,8 @@ public class VJoyController : IDisposable
         {
             if (!vJoyEnabled())
             {
-                OnLog?.Invoke("vJoy is not enabled");
+                _initError = "vJoy driver not enabled";
+                OnLog?.Invoke("vJoy is installed but driver is not enabled — open vJoy app and enable it");
                 return false;
             }
             _vJoyInstalled = true;
@@ -94,7 +131,8 @@ public class VJoyController : IDisposable
             var result = AcquireVJD(VJD_ID);
             if (result == 0)
             {
-                OnLog?.Invoke("Failed to acquire vJoy device (is another app using it?)");
+                _initError = "Device busy or missing";
+                OnLog?.Invoke("Failed to acquire vJoy device 1 — is another app using it, or does the device not exist in vJoy config?");
                 return false;
             }
             ResetVJD(VJD_ID);
@@ -104,11 +142,19 @@ public class VJoyController : IDisposable
         }
         catch (DllNotFoundException)
         {
-            OnLog?.Invoke("vJoyInterface.dll not found — install vJoy");
+            _initError = "DLL not found";
+            OnLog?.Invoke("vJoyInterface.dll not found — install vJoy from sourceforge.net/projects/vjoy");
+            return false;
+        }
+        catch (BadImageFormatException)
+        {
+            _initError = "Wrong architecture (x86/x64 mismatch)";
+            OnLog?.Invoke("vJoy DLL architecture mismatch — ensure vJoy x64 is installed for 64-bit app");
             return false;
         }
         catch (Exception ex)
         {
+            _initError = ex.Message;
             OnLog?.Invoke($"vJoy init error: {ex.Message}");
             return false;
         }

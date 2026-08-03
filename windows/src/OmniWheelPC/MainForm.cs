@@ -446,9 +446,22 @@ public class MainForm : Form
         }
         else { _packetLabel.Text = "--/s"; _packetLabel.ForeColor = TextMuted; }
         
-        // vJoy
-        _vjoyLabel.Text = _vJoy.IsAvailable ? "vJoy: Active (Device 1)" : "vJoy: Not installed";
-        _vjoyLabel.ForeColor = _vJoy.IsAvailable ? Green : Red;
+        // vJoy — show real error reason
+        if (_vJoy.IsAvailable)
+        {
+            _vjoyLabel.Text = "vJoy: Active (Device 1)";
+            _vjoyLabel.ForeColor = Green;
+        }
+        else if (!string.IsNullOrEmpty(_vJoy.InitError))
+        {
+            _vjoyLabel.Text = $"vJoy: {_vJoy.InitError}";
+            _vjoyLabel.ForeColor = Red;
+        }
+        else
+        {
+            _vjoyLabel.Text = "vJoy: Initializing...";
+            _vjoyLabel.ForeColor = Yellow;
+        }
     }
     
     private void Log(string msg)
