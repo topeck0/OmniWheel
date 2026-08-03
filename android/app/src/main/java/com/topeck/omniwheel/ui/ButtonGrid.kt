@@ -223,7 +223,7 @@ fun ControllerStatusBar(
         }
         
         Text(
-            text = "v0.8.8-alpha",
+            text = "v0.8.9-alpha",
             fontSize = 8.sp,
             color = Color(0xFF333333)
         )
