@@ -2,7 +2,8 @@ package com.topeck.omniwheel.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,24 +59,25 @@ fun SteeringWheelView(
             .let { m ->
                 if (isGyroActive) m
                 else m.pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            isTouching.value = true
-                            val cx = size.width / 2f
-                            val cy = size.height / 2f
-                            viewModel.onRotationTouchStart(offset.x - cx, offset.y - cy)
-                        },
-                        onDrag = { change, _ ->
-                            change.consume()
-                            val cx = size.width / 2f
-                            val cy = size.height / 2f
-                            viewModel.onRotationTouchMove(change.position.x - cx, change.position.y - cy)
-                        },
-                        onDragEnd = {
-                            isTouching.value = false
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        down.consume()
+                        val cx = size.width / 2f
+                        val cy = size.height / 2f
+                        viewModel.onRotationTouchDown(down.position.x - cx, down.position.y - cy)
+
+                        try {
+                            do {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null || !change.pressed) break
+                                change.consume()
+                                viewModel.onRotationTouchMove(change.position.x - cx, change.position.y - cy)
+                            } while (true)
+                        } finally {
                             viewModel.onTouchEnd()
                         }
-                    )
+                    }
                 }
             },
         contentAlignment = Alignment.Center

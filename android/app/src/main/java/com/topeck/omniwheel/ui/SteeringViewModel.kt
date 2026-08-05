@@ -61,7 +61,7 @@ class SteeringViewModel : ViewModel() {
         }
     }
     
-    fun onRotationTouchStart(touchX: Float, touchY: Float) {
+    fun onRotationTouchDown(touchX: Float, touchY: Float) {
         isTouching = true
         velocity = 0f
         // Instantly hold position at current wheel position (static or spring-returning)
@@ -69,6 +69,10 @@ class SteeringViewModel : ViewModel() {
         accumulatedRad = smoothedOutput * maxAngleDeg * PI.toFloat() / 180f
         prevTouchAngleRad = atan2(touchY, touchX)
         publish()
+    }
+    
+    fun onRotationTouchStart(touchX: Float, touchY: Float) {
+        onRotationTouchDown(touchX, touchY)
     }
     
     fun onRotationTouchMove(touchX: Float, touchY: Float) {
