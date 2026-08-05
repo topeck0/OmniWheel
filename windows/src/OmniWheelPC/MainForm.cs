@@ -80,7 +80,6 @@ public class MainForm : Form
     
     private readonly System.Windows.Forms.Timer _uiTimer;
     private int _packetCount;
-    private int _lastPacketCount;
     private int _packetsPerSecond;
     private DateTime _lastPpsTime = DateTime.UtcNow;
     private int _lastPpsCount = 0;
