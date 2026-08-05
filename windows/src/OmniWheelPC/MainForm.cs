@@ -82,6 +82,8 @@ public class MainForm : Form
     private int _packetCount;
     private int _lastPacketCount;
     private int _packetsPerSecond;
+    private DateTime _lastPpsTime = DateTime.UtcNow;
+    private int _lastPpsCount = 0;
     private bool _layoutBuilt;
     private bool _cleanedUp;
     
@@ -115,7 +117,7 @@ public class MainForm : Form
                 _vJoy.Update(_input.CurrentState);
         };
         
-        _uiTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        _uiTimer = new System.Windows.Forms.Timer { Interval = 15 }; // ~67 FPS for ultra-smooth UI
         _uiTimer.Tick += UpdateUI;
         
         BuildUI();
@@ -378,7 +380,14 @@ public class MainForm : Form
             _deviceList.Items.Add(text);
     }
     
-    private void OnInputReceived() { _packetCount++; }
+    private void OnInputReceived() 
+    { 
+        _packetCount++;
+        if (_vJoy.IsAvailable)
+        {
+            _vJoy.Update(_input.CurrentState);
+        }
+    }
     
     private void OnDeviceConnected()
     {
@@ -437,12 +446,18 @@ public class MainForm : Form
         _buttonsLabel.ForeColor = pressed.Count > 0 ? Accent : TextDim;
         
         // Packets
-        _packetsPerSecond = _packetCount - _lastPacketCount;
-        _lastPacketCount = _packetCount;
+        var now = DateTime.UtcNow;
+        var elapsedSec = (now - _lastPpsTime).TotalSeconds;
+        if (elapsedSec >= 0.5)
+        {
+            _packetsPerSecond = (int)((_packetCount - _lastPpsCount) / elapsedSec);
+            _lastPpsCount = _packetCount;
+            _lastPpsTime = now;
+        }
         if (_input.IsConnected)
         {
-            _packetLabel.Text = $"{_packetsPerSecond * 10}/s";
-            _packetLabel.ForeColor = _packetsPerSecond * 10 > 50 ? Green : Yellow;
+            _packetLabel.Text = $"{_packetsPerSecond}/s";
+            _packetLabel.ForeColor = _packetsPerSecond > 50 ? Green : Yellow;
         }
         else { _packetLabel.Text = "--/s"; _packetLabel.ForeColor = TextMuted; }
         

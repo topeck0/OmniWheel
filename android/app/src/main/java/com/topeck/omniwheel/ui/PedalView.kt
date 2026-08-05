@@ -35,16 +35,8 @@ fun PedalView(
     val isPressed = remember { mutableStateOf(false) }
     
     LaunchedEffect(value) {
-        // FIX #4: Smooth animation loop instead of one-shot step
-        while (true) {
-            val diff = value - displayValue.value
-            if (abs(diff) < 0.002f) {
-                displayValue.value = if (value <= 0f) 0f else value
-                break
-            }
-            displayValue.value += diff * 0.18f
-            delay(16) // ~60fps
-        }
+        // Instant response without interpolation lag
+        displayValue.value = value
     }
     
     Column(
