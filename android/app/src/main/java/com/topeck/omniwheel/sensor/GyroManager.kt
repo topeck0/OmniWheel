@@ -112,20 +112,17 @@ class GyroManager(context: Context) : SensorEventListener {
         gY += alpha * (event.values[1] - gY)
         gZ += alpha * (event.values[2] - gZ)
 
-        // Map gravity from device coordinates to SCREEN coordinates
+        // Map gravity from device coordinates to SCREEN coordinates cleanly
         val rotation = getScreenRotation()
-        val (screenGx, screenGz) = when (rotation) {
-            Surface.ROTATION_90 -> Pair(gY, gZ)
-            Surface.ROTATION_270 -> Pair(-gY, gZ)
-            Surface.ROTATION_0 -> Pair(gX, gZ)
-            Surface.ROTATION_180 -> Pair(-gX, gZ)
-            else -> Pair(gX, gZ)
+        val rawTilt = when (rotation) {
+            Surface.ROTATION_90 -> gY
+            Surface.ROTATION_270 -> -gY
+            Surface.ROTATION_180 -> -gX
+            else -> gX
         }
 
-        // Water-level calculation
-        val tiltRad = atan2(screenGx.toDouble(), screenGz.toDouble())
-        val tiltDeg = Math.toDegrees(tiltRad).toFloat()
-
+        // Linear tilt component normalized against gravity (~9.81)
+        val tiltDeg = (rawTilt / 9.81f).coerceIn(-1f, 1f) * maxTiltDeg
         tiltDegrees = tiltDeg
         smoothTilt += smoothAlpha * (tiltDeg - smoothTilt)
 

@@ -32,10 +32,9 @@ class SteeringViewModel : ViewModel() {
     private var velocity = 0f
     private var isTouching = false
     
-    // Incremental rotation tracking
-    private var prevTouchAngleRad = 0f
+    // Absolute touch rotation tracking
+    private var initialTouchAngleRad = 0f
     private var angleAtTouchStart = 0f
-    private var accumulatedRad = 0f
     
     // Smoothed output for when not touching (spring return)
     private var smoothedOutput = 0f
@@ -53,7 +52,7 @@ class SteeringViewModel : ViewModel() {
     
     private fun publish() {
         if (isTouching) {
-            val rawDeg = accumulatedRad * 180f / PI.toFloat()
+            val rawDeg = currentAngle * maxAngleDeg
             _visualRotationDeg.value = rawDeg.coerceIn(-maxAngleDeg, maxAngleDeg)
             _displayAngle.value = currentAngle
         } else {
@@ -64,35 +63,24 @@ class SteeringViewModel : ViewModel() {
     
     fun onRotationTouchStart(touchX: Float, touchY: Float) {
         isTouching = true
-        prevTouchAngleRad = atan2(touchY, touchX)
-        // FIX #2: Base BOTH from smoothedOutput so there's no mismatch
-        // during spring return — wheel starts exactly where it visually is
-        currentAngle = smoothedOutput
-        angleAtTouchStart = smoothedOutput
-        accumulatedRad = smoothedOutput * maxAngleDeg * PI.toFloat() / 180f
         velocity = 0f
+        angleAtTouchStart = outputAngle
+        initialTouchAngleRad = atan2(touchY, touchX)
         publish()
     }
     
     fun onRotationTouchMove(touchX: Float, touchY: Float) {
         if (!isTouching) return
         
-        val newAngleRad = atan2(touchY, touchX)
-        var deltaRad = newAngleRad - prevTouchAngleRad
+        val currentTouchAngleRad = atan2(touchY, touchX)
+        var diffRad = currentTouchAngleRad - initialTouchAngleRad
         
-        if (deltaRad > PI.toFloat()) deltaRad -= 2f * PI.toFloat()
-        if (deltaRad < -PI.toFloat()) deltaRad += 2f * PI.toFloat()
+        while (diffRad > PI.toFloat()) diffRad -= 2f * PI.toFloat()
+        while (diffRad < -PI.toFloat()) diffRad += 2f * PI.toFloat()
         
-        accumulatedRad += deltaRad
-        prevTouchAngleRad = newAngleRad
-        
-        // FIX #3: Clamp accumulatedRad to max range so it can't drift beyond
         val maxAngleRad = maxAngleDeg * PI.toFloat() / 180f
-        accumulatedRad = accumulatedRad.coerceIn(-maxAngleRad, maxAngleRad)
-        
-        // Convert to normalized steering (-1..1)
-        val normalizedDelta = (accumulatedRad / maxAngleRad) * sensitivity
-        currentAngle = (angleAtTouchStart + normalizedDelta).coerceIn(-1f, 1f)
+        val targetRad = angleAtTouchStart * maxAngleRad + diffRad * sensitivity
+        currentAngle = (targetRad / maxAngleRad).coerceIn(-1f, 1f)
         velocity = 0f
         
         // ZERO-LATENCY: send steering directly
@@ -106,8 +94,6 @@ class SteeringViewModel : ViewModel() {
     
     fun onTouchEnd() {
         isTouching = false
-        // FIX #1: Sync smoothedOutput to currentAngle so there's no visual jump
-        // when transitioning from touch-tracking to spring-return mode
         smoothedOutput = currentAngle
         publish()
     }

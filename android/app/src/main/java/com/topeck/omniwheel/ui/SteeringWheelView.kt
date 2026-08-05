@@ -53,25 +53,28 @@ fun SteeringWheelView(
             .fillMaxHeight()
             .aspectRatio(2.0f)
             .clipToBounds()
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        isTouching.value = true
-                        val cx = size.width / 2f
-                        val cy = size.height / 2f
-                        viewModel.onRotationTouchStart(offset.x - cx, offset.y - cy)
-                    },
-                    onDrag = { change, _ ->
-                        change.consume()
-                        val cx = size.width / 2f
-                        val cy = size.height / 2f
-                        viewModel.onRotationTouchMove(change.position.x - cx, change.position.y - cy)
-                    },
-                    onDragEnd = {
-                        isTouching.value = false
-                        viewModel.onTouchEnd()
-                    }
-                )
+            .let { m ->
+                if (isGyroActive) m
+                else m.pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            isTouching.value = true
+                            val cx = size.width / 2f
+                            val cy = size.height / 2f
+                            viewModel.onRotationTouchStart(offset.x - cx, offset.y - cy)
+                        },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            val cx = size.width / 2f
+                            val cy = size.height / 2f
+                            viewModel.onRotationTouchMove(change.position.x - cx, change.position.y - cy)
+                        },
+                        onDragEnd = {
+                            isTouching.value = false
+                            viewModel.onTouchEnd()
+                        }
+                    )
+                }
             },
         contentAlignment = Alignment.Center
     ) {
