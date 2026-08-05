@@ -10,7 +10,6 @@ import android.view.Surface
 import android.view.WindowManager
 import com.topeck.omniwheel.network.InputSender
 import kotlin.math.abs
-import kotlin.math.arcsin
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
