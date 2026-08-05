@@ -10,6 +10,8 @@ import android.view.Surface
 import android.view.WindowManager
 import com.topeck.omniwheel.network.InputSender
 import kotlin.math.abs
+import kotlin.math.arcsin
+import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -121,8 +123,11 @@ class GyroManager(context: Context) : SensorEventListener {
             else -> gX
         }
 
-        // Linear tilt component normalized against gravity (~9.81)
-        val tiltDeg = (rawTilt / 9.81f).coerceIn(-1f, 1f) * maxTiltDeg
+        // Use asin to get true monotonic tilt angle in degrees up to 90° without wrapping
+        val normalizedG = (rawTilt / 9.81f).coerceIn(-1f, 1f)
+        val tiltRad = asin(normalizedG.toDouble())
+        val tiltDeg = Math.toDegrees(tiltRad).toFloat()
+
         tiltDegrees = tiltDeg
         smoothTilt += smoothAlpha * (tiltDeg - smoothTilt)
 

@@ -108,19 +108,6 @@ class SteeringViewModel : ViewModel() {
     fun updatePhysics() {
         if (isTouching) return
         
-        val prevAngle = currentAngle
-        val dist = abs(currentAngle)
-        
-        // Snap to zero when very close and nearly stopped
-        if (dist < 0.005f && abs(velocity) < 0.1f) {
-            currentAngle = 0f
-            velocity = 0f
-            smoothedOutput = 0f
-            inputSender?.steering = 0
-            publish()
-            return
-        }
-        
         // Constant spring force
         val springForce = -springStrength * currentAngle
         
@@ -135,13 +122,14 @@ class SteeringViewModel : ViewModel() {
         if (currentAngle > 1f) { currentAngle = 1f; velocity = -velocity * 0.05f }
         else if (currentAngle < -1f) { currentAngle = -1f; velocity = -velocity * 0.05f }
         
-        // Zero-crossing snap
-        if (prevAngle * currentAngle < 0f) {
+        smoothedOutput = smoothedOutput + (currentAngle - smoothedOutput) * (1f - smoothing)
+        
+        // Gently settle to zero when extremely close
+        if (abs(smoothedOutput) < 0.001f && abs(currentAngle) < 0.001f && abs(velocity) < 0.05f) {
             currentAngle = 0f
+            smoothedOutput = 0f
             velocity = 0f
         }
-        
-        smoothedOutput = smoothedOutput + (currentAngle - smoothedOutput) * (1f - smoothing)
         
         inputSender?.let { sender ->
             val val0 = if (abs(smoothedOutput) < deadzone) 0f else smoothedOutput
