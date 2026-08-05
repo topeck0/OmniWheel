@@ -37,10 +37,12 @@ fun SteeringWheelView(
     val rotDeg by viewModel.visualRotationDeg
     val isTouching = remember { mutableStateOf(false) }
 
-    // Physics loop for spring return when not touching
-    LaunchedEffect(Unit) {
+    // Physics loop for spring return when not touching (and gyro is NOT active)
+    LaunchedEffect(isGyroActive) {
         while (true) {
-            viewModel.updatePhysics()
+            if (!isGyroActive) {
+                viewModel.updatePhysics()
+            }
             delay(1000L / 240)
         }
     }
