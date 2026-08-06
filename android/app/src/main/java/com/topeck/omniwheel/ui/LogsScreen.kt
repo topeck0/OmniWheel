@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -29,6 +30,10 @@ fun LogsScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+
+    BackHandler {
+        onBack()
+    }
 
     Column(
         modifier = Modifier

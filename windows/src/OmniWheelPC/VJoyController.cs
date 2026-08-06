@@ -99,7 +99,7 @@ public class VJoyController : IDisposable
     private long _prevThrottle = long.MinValue;
     private long _prevBrake = long.MinValue;
     private long _prevClutch = long.MinValue;
-    private bool[] _prevButtons = new bool[16];
+    private bool[] _prevButtons = new bool[24];
     private bool _buttonsInitialized = false;
 
     // Stats
@@ -213,19 +213,19 @@ public class VJoyController : IDisposable
         var btns = state.ButtonStates;
         if (!_buttonsInitialized)
         {
-            // First call: set all 16 buttons
-            for (int i = 0; i < 16; i++)
+            // First call: set all buttons
+            for (int i = 0; i < 24; i++)
             {
                 SetBtn(btns[i], VJD_ID, (byte)(i + 1));
                 _prevButtons[i] = btns[i];
             }
             _buttonsInitialized = true;
-            _totalCalls += 16;
+            _totalCalls += 24;
         }
         else
         {
             // Subsequent: only update changed buttons
-            for (int i = 0; i < 16; i++)
+            for (int i = 0; i < 24; i++)
             {
                 if (btns[i] != _prevButtons[i])
                 {

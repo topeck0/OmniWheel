@@ -1,5 +1,6 @@
 package com.topeck.omniwheel.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ScrollState
@@ -38,6 +39,10 @@ fun SettingsScreen(
     var expandedSection by remember { mutableStateOf<String?>(null) }
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
+
+    BackHandler {
+        onBack()
+    }
     
     Column(
         modifier = Modifier

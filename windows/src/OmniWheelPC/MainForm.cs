@@ -437,7 +437,7 @@ public class MainForm : Form
         
         // Buttons — vJoy numbers
         var pressed = new List<string>();
-        for (int i = 0; i < 16; i++)
+        for (int i = 0; i < s.ButtonStates.Length; i++)
             if (s.ButtonStates[i]) pressed.Add($"{(i + 1)}");
         _buttonsLabel.Text = pressed.Count > 0
             ? $"Buttons: {string.Join(", ", pressed)}"
