@@ -40,27 +40,16 @@ fun PedalShape(
     }
     val fill = displayValue.value.coerceIn(0f, 1f)
 
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Bottom
+    Box(
+        modifier = modifier.fillMaxSize()
     ) {
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (pressed) color else Color(0xFF555555),
-            textAlign = TextAlign.Center,
-            letterSpacing = 1.sp
-        )
-
-        Spacer(Modifier.height(4.dp))
-
+        // Track fills the whole widget so there is never a hollow/empty
+        // outlined region above the pedal.
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.72f)
-                .fillMaxHeight(0.78f)
-                .clip(RoundedCornerShape(18.dp))
+                .fillMaxWidth(0.9f)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF12122A))
                 .then(trackModifier),
             contentAlignment = Alignment.BottomCenter
@@ -70,7 +59,7 @@ fun PedalShape(
                     modifier = Modifier
                         .fillMaxWidth()
                         .fillMaxHeight(fill)
-                        .clip(RoundedCornerShape(18.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
@@ -88,7 +77,7 @@ fun PedalShape(
                 for (i in 1 until lineCount) {
                     val y = size.height - i * lineSpacingPx
                     drawLine(
-                        color = Color.White.copy(alpha = 0.04f),
+                        color = Color.White.copy(alpha = 0.045f),
                         start = Offset(size.width * 0.15f, y),
                         end = Offset(size.width * 0.85f, y),
                         strokeWidth = 1f
@@ -96,14 +85,31 @@ fun PedalShape(
                 }
             }
 
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Top
+            ) {
+                Text(
+                    text = label,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (pressed) color else Color(0xFF555555),
+                    textAlign = TextAlign.Center,
+                    letterSpacing = 1.sp
+                )
+            }
+
             Text(
                 text = "${(fill * 100).toInt()}",
-                fontSize = 16.sp,
+                fontSize = if (fill > 0.01f) 16.sp else 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (fill > 0.01f) Color.White else Color(0xFF444444),
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .padding(bottom = 20.dp)
+                    .padding(bottom = 34.dp)
             )
         }
     }

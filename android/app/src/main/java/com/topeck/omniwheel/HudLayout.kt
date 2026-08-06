@@ -39,8 +39,14 @@ const val HUD_REF_H = 540f
 // Per-type reset defaults (also used as the fresh-install default sizes).
 const val BUTTON_DEF_W_DP = 75f
 const val BUTTON_DEF_H_DP = 84f
-const val PEDAL_DEF_W_DP = 450f
-const val PEDAL_DEF_H_DP = 450f
+const val PEDAL_DEF_W_DP = 120f
+const val PEDAL_DEF_H_DP = 470f
+
+// Slider (pedal) range readouts, in dp.
+const val PEDAL_W_MIN_DP = 70f
+const val PEDAL_W_MAX_DP = 500f
+const val PEDAL_H_MIN_DP = 200f
+const val PEDAL_H_MAX_DP = 700f
 
 fun HudWidget.resetToTypeDefaults(): HudWidget {
     return if (isSteering) {
@@ -59,10 +65,10 @@ fun HudWidget.resetToTypeDefaults(): HudWidget {
 fun defaultControllerLayout(): List<HudWidget> = listOf(
     // Steering wheel (center-left zone)
     HudWidget("steering", "Steering", 0.205f, 0.47f, 0.32f, 0.62f, 0, 1f, isCircular = true, isSteering = true),
-    // Pedals (far right vertical column)
-    HudWidget("clutch", "CLUTCH", 0.76f, 0.56f, 0.10f, 0.88f, 0, 1f, isPedal = true),
-    HudWidget("brake", "BRAKE", 0.875f, 0.56f, 0.10f, 0.88f, 0, 1f, isPedal = true),
-    HudWidget("gas", "GAS", 0.99f, 0.56f, 0.10f, 0.88f, 0, 1f, isPedal = true),
+    // Pedals (far right vertical column). Default size 120x470dp.
+    HudWidget("clutch", "CLUTCH", 0.6675f, 0.56f, PEDAL_DEF_W_DP / HUD_REF_W, PEDAL_DEF_H_DP / HUD_REF_H, 0, 1f, isPedal = true),
+    HudWidget("brake", "BRAKE", 0.8025f, 0.56f, PEDAL_DEF_W_DP / HUD_REF_W, PEDAL_DEF_H_DP / HUD_REF_H, 0, 1f, isPedal = true),
+    HudWidget("gas", "GAS", 0.9375f, 0.56f, PEDAL_DEF_W_DP / HUD_REF_W, PEDAL_DEF_H_DP / HUD_REF_H, 0, 1f, isPedal = true),
     // Buttons: 75x84dp default (wFrac = 75/960 = 0.078, hFrac = 84/540 = 0.156).
     // Placed in a 4x5 grid with enough spacing so they never overlap.
     HudWidget("btn_5", "5", 0.43f, 0.13f, 0.078f, 0.156f, 5),
