@@ -41,29 +41,30 @@ fun HudEditorScreen(
     settings: SettingsManager,
     onBack: () -> Unit
 ) {
+    // Exact initial layout matching ControllerScreen proportions
     val initialWidgets = remember {
         listOf(
-            HudWidget("steering", "Steering", 200f, 100f, 220f, 220f, 0, isCircular = true),
-            HudWidget("clutch", "Clutch", 650f, 60f, 65f, 240f, 0),
-            HudWidget("brake", "Brake", 730f, 60f, 65f, 240f, 0),
-            HudWidget("gas", "Gas", 810f, 60f, 65f, 240f, 0),
-            HudWidget("btn_5", "5", 50f, 10f, 45f, 45f, 5),
-            HudWidget("btn_6", "6", 100f, 10f, 45f, 45f, 6),
-            HudWidget("btn_7", "7", 150f, 10f, 45f, 45f, 7),
-            HudWidget("btn_18", "18", 200f, 10f, 50f, 45f, 18),
-            HudWidget("btn_4", "4", 20f, 150f, 45f, 45f, 4),
-            HudWidget("btn_8", "8", 260f, 150f, 50f, 45f, 8),
-            HudWidget("btn_1", "1", 340f, 20f, 55f, 45f, 1),
-            HudWidget("btn_3", "3", 400f, 20f, 55f, 45f, 3),
-            HudWidget("btn_2", "2", 460f, 20f, 55f, 45f, 2),
-            HudWidget("btn_10", "10", 340f, 75f, 50f, 45f, 10),
-            HudWidget("btn_15", "15", 395f, 75f, 50f, 45f, 15),
-            HudWidget("btn_9", "9", 450f, 75f, 50f, 45f, 9),
-            HudWidget("btn_11", "11", 340f, 130f, 50f, 45f, 11),
-            HudWidget("btn_12", "12", 395f, 130f, 50f, 45f, 12),
-            HudWidget("btn_17", "17", 450f, 130f, 50f, 45f, 17),
-            HudWidget("btn_13", "13", 370f, 185f, 110f, 40f, 13),
-            HudWidget("btn_14", "14", 50f, 260f, 45f, 45f, 14)
+            HudWidget("steering", "Steering", 180f, 100f, 180f, 180f, 0, isCircular = true),
+            HudWidget("clutch", "Clutch", 640f, 40f, 60f, 220f, 0),
+            HudWidget("brake", "Brake", 710f, 40f, 60f, 220f, 0),
+            HudWidget("gas", "Gas", 780f, 40f, 60f, 220f, 0),
+            HudWidget("btn_5", "5", 40f, 10f, 40f, 40f, 5),
+            HudWidget("btn_6", "6", 85f, 10f, 40f, 40f, 6),
+            HudWidget("btn_7", "7", 130f, 10f, 40f, 40f, 7),
+            HudWidget("btn_18", "18", 175f, 10f, 45f, 40f, 18),
+            HudWidget("btn_4", "4", 10f, 130f, 40f, 40f, 4),
+            HudWidget("btn_8", "8", 225f, 130f, 45f, 40f, 8),
+            HudWidget("btn_1", "1", 300f, 15f, 50f, 40f, 1),
+            HudWidget("btn_3", "3", 355f, 15f, 50f, 40f, 3),
+            HudWidget("btn_2", "2", 410f, 15f, 50f, 40f, 2),
+            HudWidget("btn_10", "10", 300f, 65f, 45f, 40f, 10),
+            HudWidget("btn_15", "15", 350f, 65f, 45f, 40f, 15),
+            HudWidget("btn_9", "9", 400f, 65f, 45f, 40f, 9),
+            HudWidget("btn_11", "11", 300f, 115f, 45f, 40f, 11),
+            HudWidget("btn_12", "12", 350f, 115f, 45f, 40f, 12),
+            HudWidget("btn_17", "17", 400f, 115f, 45f, 40f, 17),
+            HudWidget("btn_13", "13", 320f, 165f, 100f, 35f, 13),
+            HudWidget("btn_14", "14", 40f, 240f, 40f, 40f, 14)
         )
     }
 
@@ -97,13 +98,18 @@ fun HudEditorScreen(
             .background(Color(0xFF0F0F1A))
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            widgets.forEach { widget ->
+            widgets.forEachIndexed { index, widget ->
                 val shape = if (widget.isCircular) CircleShape else RoundedCornerShape(8.dp)
+                val isSelected = selectedWidget?.id == widget.id
                 Box(
                     modifier = Modifier
                         .offset(x = widget.x.dp, y = widget.y.dp)
                         .size(width = (widget.width * widget.scale).dp, height = (widget.height * widget.scale).dp)
-                        .border(2.dp, Color(0xFF00E5FF), shape)
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) Color(0xFF00E5FF) else Color(0xFF2A2A44).copy(alpha = 0.5f),
+                            shape = shape
+                        )
                         .clip(shape)
                         .background(Color(0xFF1E1E36).copy(alpha = 0.6f))
                         .pointerInput(widget.id) {
@@ -190,7 +196,7 @@ fun HudEditorScreen(
                 onClick = {
                     saveSnapshot()
                     val nextBtnNum = widgets.count { it.id.startsWith("btn_") } + 1
-                    widgets.add(HudWidget("btn_$nextBtnNum", "$nextBtnNum", 100f, 50f, 45f, 45f, nextBtnNum))
+                    widgets.add(HudWidget("btn_$nextBtnNum", "$nextBtnNum", 100f, 50f, 40f, 40f, nextBtnNum))
                     hasChanges = true
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
@@ -213,8 +219,9 @@ fun HudEditorScreen(
             }
         }
 
-        // Properties Popup Window
+        // Properties Popup Window with Live Updates
         selectedWidget?.let { widget ->
+            val index = widgets.indexOfFirst { it.id == widget.id }
             Box(
                 modifier = Modifier
                     .offset(x = popupPos.x.dp, y = popupPos.y.dp)
@@ -256,10 +263,11 @@ fun HudEditorScreen(
                             value = widget.vJoyBtn.toString(),
                             onValueChange = {
                                 val num = it.toIntOrNull()
-                                if (num != null) {
+                                if (num != null && index >= 0) {
                                     saveSnapshot()
-                                    widget.vJoyBtn = num
-                                    widget.label = num.toString()
+                                    val updated = widget.copy(vJoyBtn = num, label = num.toString())
+                                    widgets[index] = updated
+                                    selectedWidget = updated
                                     hasChanges = true
                                 }
                             },
@@ -272,9 +280,13 @@ fun HudEditorScreen(
                     Text("Scale: ${"%.2f".format(widget.scale)}x", fontSize = 11.sp, color = Color.Gray)
                     Slider(
                         value = widget.scale,
-                        onValueChange = {
-                            widget.scale = it
-                            hasChanges = true
+                        onValueChange = { newScale ->
+                            if (index >= 0) {
+                                val updated = widget.copy(scale = newScale)
+                                widgets[index] = updated
+                                selectedWidget = updated
+                                hasChanges = true
+                            }
                         },
                         valueRange = 0.5f..2.0f
                     )
@@ -282,9 +294,13 @@ fun HudEditorScreen(
                     Text("Width: ${widget.width.toInt()}dp", fontSize = 11.sp, color = Color.Gray)
                     Slider(
                         value = widget.width,
-                        onValueChange = {
-                            widget.width = it
-                            hasChanges = true
+                        onValueChange = { newW ->
+                            if (index >= 0) {
+                                val updated = widget.copy(width = newW)
+                                widgets[index] = updated
+                                selectedWidget = updated
+                                hasChanges = true
+                            }
                         },
                         valueRange = 30f..300f
                     )
@@ -292,9 +308,13 @@ fun HudEditorScreen(
                     Text("Height: ${widget.height.toInt()}dp", fontSize = 11.sp, color = Color.Gray)
                     Slider(
                         value = widget.height,
-                        onValueChange = {
-                            widget.height = it
-                            hasChanges = true
+                        onValueChange = { newH ->
+                            if (index >= 0) {
+                                val updated = widget.copy(height = newH)
+                                widgets[index] = updated
+                                selectedWidget = updated
+                                hasChanges = true
+                            }
                         },
                         valueRange = 30f..300f
                     )
