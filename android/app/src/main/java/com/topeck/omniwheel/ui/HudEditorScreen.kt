@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -25,7 +26,7 @@ import com.topeck.omniwheel.SettingsManager
 
 data class HudWidget(
     val id: String,
-    val label: String,
+    var label: String,
     var x: Float,
     var y: Float,
     var width: Float,
@@ -35,51 +36,39 @@ data class HudWidget(
     val isCircular: Boolean = false
 )
 
-data class EditorStateSnapshot(
-    val widgets: List<HudWidget>
-)
-
 @Composable
 fun HudEditorScreen(
     settings: SettingsManager,
     onBack: () -> Unit
 ) {
-    // Initial exact layout matching ControllerScreen (18 buttons, steering wheel, 3 pedals)
     val initialWidgets = remember {
-        mutableListOf<HudWidget>().apply {
-            // Steering Wheel
-            add(HudWidget("steering", "Steering", 200f, 100f, 220f, 220f, 0, isCircular = true))
-            // Pedals
-            add(HudWidget("clutch", "Clutch", 650f, 60f, 65f, 240f, 0))
-            add(HudWidget("brake", "Brake", 730f, 60f, 65f, 240f, 0))
-            add(HudWidget("gas", "Gas", 810f, 60f, 65f, 240f, 0))
-            // Top row buttons (5, 6, 7, 18)
-            add(HudWidget("btn_5", "5", 50f, 10f, 45f, 45f, 5))
-            add(HudWidget("btn_6", "6", 100f, 10f, 45f, 45f, 6))
-            add(HudWidget("btn_7", "7", 150f, 10f, 45f, 45f, 7))
-            add(HudWidget("btn_18", "18", 200f, 10f, 50f, 45f, 18))
-            // Button 4 & 8
-            add(HudWidget("btn_4", "4", 20f, 150f, 45f, 45f, 4))
-            add(HudWidget("btn_8", "8", 260f, 150f, 50f, 45f, 8))
-            // Center-Right buttons (1, 3, 2, 10, 15, 9, 11, 12, 17, 13)
-            add(HudWidget("btn_1", "1", 340f, 20f, 55f, 45f, 1))
-            add(HudWidget("btn_3", "3", 400f, 20f, 55f, 45f, 3))
-            add(HudWidget("btn_2", "2", 460f, 20f, 55f, 45f, 2))
-            add(HudWidget("btn_10", "10", 340f, 75f, 50f, 45f, 10))
-            add(HudWidget("btn_15", "15", 395f, 75f, 50f, 45f, 15))
-            add(HudWidget("btn_9", "9", 450f, 75f, 50f, 45f, 9))
-            add(HudWidget("btn_11", "11", 340f, 130f, 50f, 45f, 11))
-            add(HudWidget("btn_12", "12", 395f, 130f, 50f, 45f, 12))
-            add(HudWidget("btn_17", "17", 450f, 130f, 50f, 45f, 17))
-            add(HudWidget("btn_13", "13", 370f, 185f, 110f, 40f, 13))
-            // Button 14 (bottom-left)
-            add(HudWidget("btn_14", "14", 50f, 260f, 45f, 45f, 14))
-        }
+        listOf(
+            HudWidget("steering", "Steering", 200f, 100f, 220f, 220f, 0, isCircular = true),
+            HudWidget("clutch", "Clutch", 650f, 60f, 65f, 240f, 0),
+            HudWidget("brake", "Brake", 730f, 60f, 65f, 240f, 0),
+            HudWidget("gas", "Gas", 810f, 60f, 65f, 240f, 0),
+            HudWidget("btn_5", "5", 50f, 10f, 45f, 45f, 5),
+            HudWidget("btn_6", "6", 100f, 10f, 45f, 45f, 6),
+            HudWidget("btn_7", "7", 150f, 10f, 45f, 45f, 7),
+            HudWidget("btn_18", "18", 200f, 10f, 50f, 45f, 18),
+            HudWidget("btn_4", "4", 20f, 150f, 45f, 45f, 4),
+            HudWidget("btn_8", "8", 260f, 150f, 50f, 45f, 8),
+            HudWidget("btn_1", "1", 340f, 20f, 55f, 45f, 1),
+            HudWidget("btn_3", "3", 400f, 20f, 55f, 45f, 3),
+            HudWidget("btn_2", "2", 460f, 20f, 55f, 45f, 2),
+            HudWidget("btn_10", "10", 340f, 75f, 50f, 45f, 10),
+            HudWidget("btn_15", "15", 395f, 75f, 50f, 45f, 15),
+            HudWidget("btn_9", "9", 450f, 75f, 50f, 45f, 9),
+            HudWidget("btn_11", "11", 340f, 130f, 50f, 45f, 11),
+            HudWidget("btn_12", "12", 395f, 130f, 50f, 45f, 12),
+            HudWidget("btn_17", "17", 450f, 130f, 50f, 45f, 17),
+            HudWidget("btn_13", "13", 370f, 185f, 110f, 40f, 13),
+            HudWidget("btn_14", "14", 50f, 260f, 45f, 45f, 14)
+        )
     }
 
     val widgets = remember { mutableStateListOf<HudWidget>().apply { addAll(initialWidgets) } }
     
-    // Undo / Redo history
     val undoStack = remember { mutableStateListOf<List<HudWidget>>() }
     val redoStack = remember { mutableStateListOf<List<HudWidget>>() }
 
@@ -89,7 +78,7 @@ fun HudEditorScreen(
     }
 
     var selectedWidget by remember { mutableStateOf<HudWidget?>(null) }
-    var popupPos by remember { mutableStateOf(Offset(100f, 100f)) }
+    var popupPos by remember { mutableStateOf(Offset(50f, 50f)) }
     var toolbarX by remember { mutableStateOf(100f) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var hasChanges by remember { mutableStateOf(false) }
@@ -107,7 +96,6 @@ fun HudEditorScreen(
             .fillMaxSize()
             .background(Color(0xFF0F0F1A))
     ) {
-        // Canvas with draggable widgets
         Box(modifier = Modifier.fillMaxSize()) {
             widgets.forEach { widget ->
                 val shape = if (widget.isCircular) CircleShape else RoundedCornerShape(8.dp)
@@ -131,7 +119,6 @@ fun HudEditorScreen(
                         }
                         .clickable {
                             selectedWidget = widget
-                            // Smart positioning for popup window (left or right of screen)
                             popupPos = if (widget.x < 400f) Offset(500f, 50f) else Offset(50f, 50f)
                         },
                     contentAlignment = Alignment.Center
@@ -146,7 +133,7 @@ fun HudEditorScreen(
             }
         }
 
-        // Floating Island Top Toolbar (Horizontally draggable only, semi-transparent)
+        // Floating Island Top Toolbar
         Row(
             modifier = Modifier
                 .offset(x = toolbarX.dp, y = 12.dp)
@@ -163,7 +150,6 @@ fun HudEditorScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Undo button
             Button(
                 onClick = {
                     if (undoStack.isNotEmpty()) {
@@ -182,7 +168,6 @@ fun HudEditorScreen(
                 Text("←", fontSize = 14.sp, color = if (undoStack.isNotEmpty()) Color.White else Color.Gray)
             }
 
-            // Redo button
             Button(
                 onClick = {
                     if (redoStack.isNotEmpty()) {
@@ -201,7 +186,6 @@ fun HudEditorScreen(
                 Text("→", fontSize = 14.sp, color = if (redoStack.isNotEmpty()) Color.White else Color.Gray)
             }
 
-            // Add button (named after next vJoy button number)
             Button(
                 onClick = {
                     saveSnapshot()
@@ -216,7 +200,6 @@ fun HudEditorScreen(
                 Text("+ Add", fontSize = 12.sp, color = Color.White)
             }
 
-            // Save button
             Button(
                 onClick = {
                     hasChanges = false
@@ -230,7 +213,7 @@ fun HudEditorScreen(
             }
         }
 
-        // Properties Popup Window (Movable anywhere, scrollable content, scale/width/height controls)
+        // Properties Popup Window
         selectedWidget?.let { widget ->
             Box(
                 modifier = Modifier
@@ -286,7 +269,6 @@ fun HudEditorScreen(
                         )
                     }
 
-                    // Scale Slider
                     Text("Scale: ${"%.2f".format(widget.scale)}x", fontSize = 11.sp, color = Color.Gray)
                     Slider(
                         value = widget.scale,
@@ -297,7 +279,6 @@ fun HudEditorScreen(
                         valueRange = 0.5f..2.0f
                     )
 
-                    // Width Slider
                     Text("Width: ${widget.width.toInt()}dp", fontSize = 11.sp, color = Color.Gray)
                     Slider(
                         value = widget.width,
@@ -308,7 +289,6 @@ fun HudEditorScreen(
                         valueRange = 30f..300f
                     )
 
-                    // Height Slider
                     Text("Height: ${widget.height.toInt()}dp", fontSize = 11.sp, color = Color.Gray)
                     Slider(
                         value = widget.height,
@@ -337,7 +317,6 @@ fun HudEditorScreen(
             }
         }
 
-        // Unsaved changes dialog
         if (showUnsavedDialog) {
             AlertDialog(
                 onDismissRequest = { showUnsavedDialog = false },
