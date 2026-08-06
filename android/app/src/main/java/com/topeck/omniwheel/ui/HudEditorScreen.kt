@@ -148,23 +148,22 @@ fun HudEditorScreen(
                                 widget.isSteering -> Image(
                                     painter = painterResource(R.drawable.steering_wheel),
                                     contentDescription = "Steering Wheel",
-                                    modifier = Modifier.fillMaxSize(0.92f)
+                                    modifier = Modifier
+                                        .fillMaxSize(0.85f)
+                                        .aspectRatio(1f)
                                 )
 
-                                widget.isPedal -> Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(4.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Bottom
-                                ) {
-                                    Text(
-                                        text = widget.label,
-                                        fontSize = 9.sp,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                widget.isPedal -> PedalShape(
+                                    label = widget.label,
+                                    color = when (widget.id) {
+                                        "gas" -> Color(0xFF22C55E)
+                                        "brake" -> Color(0xFFEF4444)
+                                        "clutch" -> Color(0xFFF59E0B)
+                                        else -> Color(0xFF3A3A5E)
+                                    },
+                                    value = 0f,
+                                    modifier = Modifier.fillMaxSize()
+                                )
 
                                 else -> Text(
                                     text = widget.label,
