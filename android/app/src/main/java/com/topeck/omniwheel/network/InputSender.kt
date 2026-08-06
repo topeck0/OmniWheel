@@ -88,13 +88,8 @@ class InputSender(private val context: Context) {
         val currentIds = HashSet<String>()
         synchronized(metaLock) {
             for (json in widgetJsons) {
-                // Key on the widget's id field.
-                var id = ""
-                try {
-                    id = new org.json.JSONObject(json).getString("id")
-                } catch (e: Exception) {
-                    continue
-                }
+                // Extract the widget id without pulling in JSON parsing.
+                val id = extractJsonId(json) ?: continue
                 currentIds.add(id)
                 val prev = sentWidgetJson[id]
                 if (prev != json) {
@@ -116,6 +111,18 @@ class InputSender(private val context: Context) {
                 sentWidgetJson.remove(id)
             }
         }
+    }
+
+    /** Pull the `"id":"..."` value from a widget JSON string (cheap, no parser). */
+    private fun extractJsonId(json: String): String? {
+        val marker = "\"id\""
+        val idx = json.indexOf(marker)
+        if (idx < 0) return null
+        val q = json.indexOf('"', idx + marker.length)
+        if (q < 0) return null
+        val end = json.indexOf('"', q + 1)
+        if (end < 0) return null
+        return json.substring(q + 1, end)
     }
 
     // Connection state
