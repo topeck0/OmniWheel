@@ -53,8 +53,7 @@ fun SteeringWheelView(
 
     Box(
         modifier = modifier
-            .fillMaxHeight()
-            .aspectRatio(2.0f)
+            .fillMaxSize()
             .clipToBounds()
             .let { m ->
                 if (isGyroActive) m
@@ -97,12 +96,13 @@ fun SteeringWheelView(
             }
         }
 
-        // Steering wheel image with hardware-accelerated rotation
+        // Steering wheel image with hardware-accelerated rotation (square = round wheel)
         Image(
             painter = painterResource(R.drawable.steering_wheel),
             contentDescription = "Steering Wheel",
             modifier = Modifier
                 .fillMaxSize(0.85f)
+                .aspectRatio(1f)
                 .graphicsLayer {
                     rotationZ = rotDeg
                 }

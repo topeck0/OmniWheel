@@ -130,6 +130,16 @@ class SettingsManager(context: Context) {
     var activeProfile: String
         get() = prefs.getString("active_profile", "Default") ?: "Default"
         set(v) = prefs.edit().putString("active_profile", v).apply()
+
+    // === HUD LAYOUT ===
+    fun saveHudLayout(widgets: List<HudWidget>) {
+        prefs.edit().putString("hud_layout", widgetListToJson(widgets)).apply()
+    }
+
+    fun loadHudLayout(): List<HudWidget> {
+        val json = prefs.getString("hud_layout", "") ?: ""
+        return widgetListFromJson(json) ?: defaultControllerLayout()
+    }
     
     fun resetToDefaults() {
         prefs.edit().clear().apply()
