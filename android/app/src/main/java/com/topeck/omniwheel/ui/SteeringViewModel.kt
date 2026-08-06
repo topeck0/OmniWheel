@@ -148,6 +148,12 @@ class SteeringViewModel : ViewModel() {
         return (output * MAX_STEERING).toInt().coerceIn(-MAX_STEERING, MAX_STEERING).toShort()
     }
     
+    fun setGyroAngle(angleNormalized: Float) {
+        smoothedOutput = angleNormalized.coerceIn(-1f, 1f)
+        _displayAngle.value = smoothedOutput
+        _visualRotationDeg.value = smoothedOutput * maxAngleDeg
+    }
+    
     fun reset() {
         currentAngle = 0f
         velocity = 0f

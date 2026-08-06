@@ -281,6 +281,7 @@ fun ControllerScreen(
         gyroManager.filterAlpha = settings.gyroFilterAlpha
         gyroManager.smoothAlpha = settings.gyroSmoothAlpha
         gyroManager.inputSender = inputSender
+        gyroManager.onSteeringChanged = { steeringViewModel.setGyroAngle(it) }
         inputSender.sendRateHz = settings.sendRateHz
         if (settings.gyroEnabled && gyroManager.isAvailable) {
             gyroManager.enable()

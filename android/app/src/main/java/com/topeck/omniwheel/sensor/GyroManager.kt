@@ -59,6 +59,7 @@ class GyroManager(context: Context) : SensorEventListener {
 
     // Direct input sender for zero-latency writes
     var inputSender: InputSender? = null
+    var onSteeringChanged: ((Float) -> Unit)? = null
 
     // Filtered gravity values (device coordinates)
     private var gX = 0f    // device right
@@ -134,6 +135,7 @@ class GyroManager(context: Context) : SensorEventListener {
         inputSender?.let { sender ->
             val steering = getSteeringFromTilt()
             sender.steering = (steering * MAX_STEERING).toInt().coerceIn(-MAX_STEERING, MAX_STEERING).toShort()
+            onSteeringChanged?.invoke(steering)
         }
     }
 
