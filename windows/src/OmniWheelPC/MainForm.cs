@@ -25,6 +25,12 @@ public class MainForm : Form
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
+    [System.Runtime.InteropServices.DllImport("winmm.dll")]
+    private static extern uint timeBeginPeriod(uint wPeriod);
+
+    [System.Runtime.InteropServices.DllImport("winmm.dll")]
+    private static extern uint timeEndPeriod(uint wPeriod);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int Left, Top, Right, Bottom; }
 
@@ -99,6 +105,7 @@ public class MainForm : Form
     private int _lastPpsCount = 0;
     private bool _cleanedUp;
     private string _currentLayoutJson = "";
+    private DateTime _lastRenderedInput = DateTime.MinValue;
 
     public MainForm()
     {
@@ -134,7 +141,7 @@ public class MainForm : Form
                 _vJoy.Update(_input.CurrentState);
         };
 
-        _uiTimer = new System.Windows.Forms.Timer { Interval = 16 }; // 60 FPS smooth
+        _uiTimer = new System.Windows.Forms.Timer { Interval = 1 }; // ~1ms (drives high-refresh preview)
         _uiTimer.Tick += UpdateUI;
 
         BuildUI();
@@ -142,6 +149,7 @@ public class MainForm : Form
 
         Load += (s, e) =>
         {
+            timeBeginPeriod(1); // allow sub-16ms timers for high-refresh preview
             _vJoy.Initialize();
             _discovery.Start();
             _input.Start();
@@ -151,7 +159,11 @@ public class MainForm : Form
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
-        FormClosing += (s, e) => Cleanup();
+        FormClosing += (s, e) =>
+        {
+            timeEndPeriod(1);
+            Cleanup();
+        };
     }
 
     private void Cleanup()
@@ -754,6 +766,14 @@ public class MainForm : Form
             _packetsPerSecond = (int)((_packetCount - _lastPpsCount) / elapsedSec);
             _lastPpsCount = _packetCount;
             _lastPpsTime = now;
+        }
+
+        // Redraw the live preview whenever fresh input arrived, so the wheel
+        // rotates at a rate matching the running display refresh (not capped at 60).
+        if (_input.CurrentState.Timestamp != _lastRenderedInput)
+        {
+            _lastRenderedInput = _input.CurrentState.Timestamp;
+            _hudPreview.Invalidate();
         }
 
         if (_input.IsConnected)

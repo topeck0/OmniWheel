@@ -262,6 +262,7 @@ fun ControllerScreen(
             }
             inputSender.metaMaxAngle = settings.steeringMaxAngle
             inputSender.metaDeviceType = Build.MODEL.ifBlank { "Android Phone" }
+            inputSender.metaClutchEnabled = settings.clutchEnabled
             inputSender.sendMetaPacket()
             inputSender.syncLayout(hudLayout.map { it.toJson().toString() })
             delay(30_000)

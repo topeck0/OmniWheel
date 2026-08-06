@@ -140,6 +140,11 @@ public class HudPreviewControl : Control
 
         foreach (var w in _widgets)
         {
+            // Respect the phone's clutch enable/disable setting.
+            if (!_input.ClutchEnabled && w.IsPedal &&
+                string.Equals(w.Id, "clutch", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             int wF = (int)(area.Width * w.WFrac);
             int hF = (int)(area.Height * w.HFrac);
 

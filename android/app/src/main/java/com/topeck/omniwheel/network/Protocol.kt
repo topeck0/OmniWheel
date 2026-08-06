@@ -199,17 +199,19 @@ object Protocol {
      *   [1-2] steering max angle uint16 LE
      *   [3-6] screen width px uint32 LE
      *   [7-10] screen height px uint32 LE
-     *   [11+] device type name UTF-8
+     *   [11] flags (bit0 = clutch enabled)
+     *   [12+] device type name UTF-8
      */
     fun buildMetaPacket(
         batteryPercent: Int,
         maxAngle: Int,
         screenWidthPx: Int,
         screenHeightPx: Int,
-        deviceType: String
+        deviceType: String,
+        clutchEnabled: Boolean = true
     ): ByteArray {
         val nameBytes = deviceType.toByteArray(Charsets.UTF_8)
-        val payload = ByteArray(11 + nameBytes.size)
+        val payload = ByteArray(12 + nameBytes.size)
         payload[0] = batteryPercent.coerceIn(0, 100).toByte()
         // max angle u16 LE
         val ma = maxAngle.coerceIn(0, 65535)
@@ -225,7 +227,9 @@ object Protocol {
         payload[8] = ((screenHeightPx shr 8) and 0xFF).toByte()
         payload[9] = ((screenHeightPx shr 16) and 0xFF).toByte()
         payload[10] = ((screenHeightPx shr 24) and 0xFF).toByte()
-        nameBytes.copyInto(payload, 11)
+        // flags
+        payload[11] = if (clutchEnabled) 1 else 0
+        nameBytes.copyInto(payload, 12)
         return buildPacket(TYPE_META, payload)
     }
 

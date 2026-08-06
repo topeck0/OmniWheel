@@ -58,6 +58,7 @@ class InputSender(private val context: Context) {
     @Volatile var metaScreenWidthPx: Int = 0
     @Volatile var metaScreenHeightPx: Int = 0
     @Volatile var metaDeviceType: String = "Android"
+    @Volatile var metaClutchEnabled: Boolean = true
 
     private val metaLock = Any()
     private val sentWidgetJson = HashMap<String, String>()
@@ -69,7 +70,7 @@ class InputSender(private val context: Context) {
             val pkt = Protocol.buildMetaPacket(
                 metaBatteryPercent, metaMaxAngle,
                 metaScreenWidthPx, metaScreenHeightPx,
-                metaDeviceType
+                metaDeviceType, metaClutchEnabled
             )
             sock.send(DatagramPacket(pkt, pkt.size, addr))
         } catch (e: Exception) {
