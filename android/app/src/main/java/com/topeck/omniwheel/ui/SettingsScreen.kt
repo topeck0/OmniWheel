@@ -357,7 +357,7 @@ fun SettingsScreen(
                 )
                 SettingsAction(
                     label = "Export Layout (JSON)",
-                    description = "Share the layout JSON with full details: positions, sizes, scale, vJoy mapping",
+                    description = "Save to Downloads (omniwheel_hud_layout.json) and share the layout JSON with full details: positions, sizes, scale, vJoy mapping",
                     color = Color(0xFF14B8A6),
                     onClick = {
                         settings.saveCurrentAsDefaultLayout()

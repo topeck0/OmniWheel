@@ -119,16 +119,16 @@ fun HudEditorScreen(
                                 .clip(shape)
                                 .background(
                                     when {
-                                        selected -> Color(0x3300E5FF)
+                                        selected && !widget.isPedal -> Color(0x3300E5FF)
                                         widget.isSteering || widget.isPedal -> Color.Transparent
                                         else -> Color(0x221E1E36)
                                     }
                                 )
                                 .border(
-                                    width = if (selected) 2.dp
+                                    width = if (selected && !widget.isPedal) 2.dp
                                     else if (widget.isSteering || widget.isPedal) 0.dp
                                     else 1.dp,
-                                    color = if (selected) Color(0xFF00E5FF)
+                                    color = if (selected && !widget.isPedal) Color(0xFF00E5FF)
                                     else Color(0xFF2A2A44).copy(alpha = 0.5f),
                                     shape = shape
                                 )
@@ -180,7 +180,8 @@ fun HudEditorScreen(
                                         else -> Color(0xFF3A3A5E)
                                     },
                                     value = 0f,
-                                    modifier = Modifier.fillMaxSize()
+                                    modifier = Modifier.fillMaxSize(),
+                                    selected = selected
                                 )
 
                                 else -> Text(
@@ -350,13 +351,15 @@ fun HudEditorScreen(
                     }
 
                     if (widget.id.startsWith("btn_")) {
+                        val curBtn = widgets.getOrNull(idx) ?: widget
                         OutlinedTextField(
-                            value = widget.vJoyBtn.toString(),
+                            value = curBtn.vJoyBtn.toString(),
                             onValueChange = {
                                 val num = it.toIntOrNull()
                                 if (num != null && idx >= 0) {
                                     pushUndo()
-                                    val updated = widget.copy(vJoyBtn = num, label = num.toString())
+                                    val c = widgets[idx]
+                                    val updated = c.copy(vJoyBtn = num, label = num.toString())
                                     widgets[idx] = updated
                                     selectedWidget = updated
                                     hasChanges = true
@@ -369,7 +372,8 @@ fun HudEditorScreen(
                     }
 
                     // Infinite scale drag handle: drag right = bigger, left = smaller
-                    Text("Scale: ${"%.2f".format(widget.scale)}x (drag right/left)", fontSize = 11.sp, color = Color.Gray)
+                    val curScale = (widgets.getOrNull(idx) ?: widget).scale
+                    Text("Scale: ${"%.2f".format(curScale)}x (drag right/left)", fontSize = 11.sp, color = Color.Gray)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -406,12 +410,42 @@ fun HudEditorScreen(
                         val wMax = if (widget.isPedal) PEDAL_W_MAX_DP / HUD_REF_W else 0.5f
                         val hMin = if (widget.isPedal) PEDAL_H_MIN_DP / HUD_REF_H else 0.02f
                         val hMax = if (widget.isPedal) PEDAL_H_MAX_DP / HUD_REF_H else 0.9f
-                        Text("Width: ${(widget.wFrac * HUD_REF_W).toInt()}dp", fontSize = 11.sp, color = Color.Gray)
+
+                        val curW = widgets.getOrNull(idx) ?: widget
+                        val curH = widgets.getOrNull(idx) ?: widget
+
+                        DpValuesRow(
+                            label = "Width",
+                            valueDp = (curW.wFrac * HUD_REF_W).toInt(),
+                            onMinus = {
+                                if (idx >= 0) {
+                                    val c = widgets[idx]
+                                    val nv = ((c.wFrac * HUD_REF_W).toInt() - 1).coerceAtLeast((wMin * HUD_REF_W).toInt())
+                                    val updated = c.copy(wFrac = nv / HUD_REF_W)
+                                    widgets[idx] = updated
+                                    selectedWidget = updated
+                                    hasChanges = true
+                                }
+                            },
+                            onPlus = {
+                                if (idx >= 0) {
+                                    val c = widgets[idx]
+                                    val nv = ((c.wFrac * HUD_REF_W).toInt() + 1).coerceAtMost((wMax * HUD_REF_W).toInt())
+                                    val updated = c.copy(wFrac = nv / HUD_REF_W)
+                                    widgets[idx] = updated
+                                    selectedWidget = updated
+                                    hasChanges = true
+                                }
+                            }
+                        )
                         Slider(
-                            value = widget.wFrac.coerceIn(wMin, wMax),
+                            value = curW.wFrac.coerceIn(wMin, wMax),
                             onValueChange = { nw ->
                                 if (idx >= 0) {
-                                    val updated = widget.copy(wFrac = nw)
+                                    val c = widgets[idx]
+                                    // Snap to whole dp so the value is easy to match exactly.
+                                    val snapped = ((nw * HUD_REF_W).roundToInt() / HUD_REF_W).coerceIn(wMin, wMax)
+                                    val updated = c.copy(wFrac = snapped)
                                     widgets[idx] = updated
                                     selectedWidget = updated
                                     hasChanges = true
@@ -420,12 +454,37 @@ fun HudEditorScreen(
                             valueRange = wMin..wMax
                         )
 
-                        Text("Height: ${(widget.hFrac * HUD_REF_H).toInt()}dp", fontSize = 11.sp, color = Color.Gray)
+                        DpValuesRow(
+                            label = "Height",
+                            valueDp = (curH.hFrac * HUD_REF_H).toInt(),
+                            onMinus = {
+                                if (idx >= 0) {
+                                    val c = widgets[idx]
+                                    val nv = ((c.hFrac * HUD_REF_H).toInt() - 1).coerceAtLeast((hMin * HUD_REF_H).toInt())
+                                    val updated = c.copy(hFrac = nv / HUD_REF_H)
+                                    widgets[idx] = updated
+                                    selectedWidget = updated
+                                    hasChanges = true
+                                }
+                            },
+                            onPlus = {
+                                if (idx >= 0) {
+                                    val c = widgets[idx]
+                                    val nv = ((c.hFrac * HUD_REF_H).toInt() + 1).coerceAtMost((hMax * HUD_REF_H).toInt())
+                                    val updated = c.copy(hFrac = nv / HUD_REF_H)
+                                    widgets[idx] = updated
+                                    selectedWidget = updated
+                                    hasChanges = true
+                                }
+                            }
+                        )
                         Slider(
-                            value = widget.hFrac.coerceIn(hMin, hMax),
+                            value = curH.hFrac.coerceIn(hMin, hMax),
                             onValueChange = { nh ->
                                 if (idx >= 0) {
-                                    val updated = widget.copy(hFrac = nh)
+                                    val c = widgets[idx]
+                                    val snapped = ((nh * HUD_REF_H).roundToInt() / HUD_REF_H).coerceIn(hMin, hMax)
+                                    val updated = c.copy(hFrac = snapped)
                                     widgets[idx] = updated
                                     selectedWidget = updated
                                     hasChanges = true
@@ -441,7 +500,9 @@ fun HudEditorScreen(
                     Button(
                         onClick = {
                             pushUndo()
-                            val updated = widget.resetToTypeDefaults()
+                            val c = widgets.getOrNull(idx) ?: widget
+                            // Keep current position; reset only the type-specific properties.
+                            val updated = c.resetToTypeDefaults().copy(cx = c.cx, cy = c.cy)
                             widgets[idx] = updated
                             selectedWidget = updated
                             hasChanges = true
@@ -462,7 +523,7 @@ fun HudEditorScreen(
                         )
                     }
 
-                    if (!widget.isSteering) {
+                    if (!widget.isSteering && !widget.isPedal) {
                         Button(
                             onClick = {
                                 pushUndo()
@@ -505,6 +566,61 @@ fun HudEditorScreen(
                     }
                 }
             )
+        }
+    }
+}
+
+// Row showing a label + integer dp value with − / + step buttons (1 dp) so
+// two widgets can be matched to the exact same size easily.
+@Composable
+private fun DpValuesRow(
+    label: String,
+    valueDp: Int,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = Color.Gray
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = onMinus,
+                modifier = Modifier.size(width = 30.dp, height = 26.dp),
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color(0xFF00E5FF),
+                    borderColor = Color(0xFF2A2A44)
+                )
+            ) {
+                Text("−", fontSize = 16.sp, color = Color(0xFF00E5FF))
+            }
+            Text(
+                text = "${valueDp}dp",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            OutlinedButton(
+                onClick = onPlus,
+                modifier = Modifier.size(width = 30.dp, height = 26.dp),
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color(0xFF00E5FF),
+                    borderColor = Color(0xFF2A2A44)
+                )
+            ) {
+                Text("+", fontSize = 16.sp, color = Color(0xFF00E5FF))
+            }
         }
     }
 }

@@ -2,6 +2,7 @@ package com.topeck.omniwheel.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
@@ -32,7 +33,8 @@ fun PedalShape(
     value: Float,
     modifier: Modifier = Modifier,
     pressed: Boolean = false,
-    trackModifier: Modifier = Modifier
+    trackModifier: Modifier = Modifier,
+    selected: Boolean = false
 ) {
     val displayValue = remember { mutableStateOf(0f) }
     LaunchedEffect(value) {
@@ -45,13 +47,18 @@ fun PedalShape(
     ) {
         // Track fills the whole widget so there is never a hollow/empty
         // outlined region above the pedal.
+        var trackMod = Modifier
+            .fillMaxWidth(0.9f)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF12122A))
+        if (selected) {
+            trackMod = trackMod
+                .border(2.dp, Color(0xFF00E5FF), RoundedCornerShape(12.dp))
+        }
+        trackMod = trackMod.then(trackModifier)
         Box(
-            modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF12122A))
-                .then(trackModifier),
+            modifier = trackMod,
             contentAlignment = Alignment.BottomCenter
         ) {
             if (fill > 0.01f) {
