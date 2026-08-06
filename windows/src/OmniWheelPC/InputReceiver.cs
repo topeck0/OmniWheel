@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 
 namespace OmniWheelPC.Network;
 
@@ -22,6 +23,8 @@ public class InputReceiver : IDisposable
     public event Action<string>? OnLog;
     public event Action? OnConnected;
     public event Action? OnDisconnected;
+    public event Action? OnMetaReceived;
+    public event Action<string>? OnWidgetReceived;
 
     private IPEndPoint? _lastRemote;
     private DateTime _lastInputTime;
@@ -47,7 +50,7 @@ public class InputReceiver : IDisposable
         _udp.Client.Ttl = 255;
         _udp.EnableBroadcast = true;
         
-        _recvBuf = new byte[64];
+        _recvBuf = new byte[512];
 
         _ = WatchdogAsync(_cts.Token);
         _task = Task.Run(RunAsync, _cts.Token);
@@ -131,6 +134,21 @@ public class InputReceiver : IDisposable
                     var ack = Protocol.BuildPacket(Protocol.PacketType.HeartbeatAck, hdr.Sequence);
                     await _udp.SendAsync(ack, ack.Length, result.RemoteEndPoint);
                 }
+                else if (hdr.Type == Protocol.PacketType.Meta && hdr.PayloadLength >= 11)
+                {
+                    ParseMeta(data, hdr.HeaderSize, hdr.PayloadLength);
+                    OnMetaReceived?.Invoke();
+                }
+                else if (hdr.Type == Protocol.PacketType.HudWidget && hdr.PayloadLength > 0)
+                {
+                    var json = Encoding.UTF8.GetString(data, hdr.HeaderSize, hdr.PayloadLength);
+                    OnWidgetReceived?.Invoke(json);
+                }
+                else if (hdr.Type == Protocol.PacketType.HudFull && hdr.PayloadLength > 0)
+                {
+                    var json = Encoding.UTF8.GetString(data, hdr.HeaderSize, hdr.PayloadLength);
+                    OnWidgetReceived?.Invoke("FULL:" + json);
+                }
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
@@ -180,6 +198,33 @@ public class InputReceiver : IDisposable
     }
 
     /// <summary>
+    /// Parse metadata payload (battery, steering range, screen size, device name).
+    ///   [0] battery % (0-100, 255 = unknown)
+    ///   [1-2] steering max angle uint16 LE
+    ///   [3-6] screen width px uint32 LE
+    ///   [7-10] screen height px uint32 LE
+    ///   [11+] device type name UTF8 (optional)
+    /// </summary>
+    private void ParseMeta(byte[] data, int offset, int payloadLen)
+    {
+        int off = offset;
+        int battery = data[off];
+        int maxAngle = (ushort)(data[off + 1] | (data[off + 2] << 8));
+        int w = (int)((uint)data[off + 3] | ((uint)data[off + 4] << 8) |
+                      ((uint)data[off + 5] << 16) | ((uint)data[off + 6] << 24));
+        int h = (int)((uint)data[off + 7] | ((uint)data[off + 8] << 8) |
+                      ((uint)data[off + 9] << 16) | ((uint)data[off + 10] << 24));
+
+        CurrentState.PhoneBatteryPercent = battery;
+        CurrentState.PhoneMaxAngle = maxAngle;
+        CurrentState.PhoneScreenWidthPx = w;
+        CurrentState.PhoneScreenHeightPx = h;
+
+        if (payloadLen > 11)
+            CurrentState.PhoneDeviceName = Encoding.UTF8.GetString(data, off + 11, payloadLen - 11).Trim();
+    }
+
+    /// <summary>
     /// Parse button bitmap into the fixed ButtonStates array.
     /// </summary>
     private void ParseButtons(byte[] data, int offset, int length)
@@ -224,7 +269,14 @@ public class InputState
     
     public bool[] ButtonStates { get; } = new bool[24];
     public bool[] Buttons => ButtonStates;
-    
+
+    // Phone metadata (received via Meta packets)
+    public int PhoneBatteryPercent { get; set; } = 255;   // 255 = unknown
+    public int PhoneMaxAngle { get; set; } = 900;
+    public int PhoneScreenWidthPx { get; set; }
+    public int PhoneScreenHeightPx { get; set; }
+    public string PhoneDeviceName { get; set; } = "";
+
     public DateTime Timestamp { get; set; }
 
     public float NormalizedSteering => Steering / 32768f;

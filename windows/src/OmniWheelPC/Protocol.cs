@@ -32,6 +32,9 @@ public static class Protocol
         HeartbeatAck = 0x08,
         Ping = 0x09,
         Pong = 0x0A,
+        Meta = 0x0B,
+        HudWidget = 0x0C,
+        HudFull = 0x0D,
         Error = 0xFF
     }
 

@@ -1,8 +1,11 @@
 package com.topeck.omniwheel
 
+import android.content.Context
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.Window
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -16,6 +19,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.topeck.omniwheel.network.DiscoveryClient
@@ -243,6 +248,25 @@ fun ControllerScreen(
     var gyroEnabled by remember { mutableStateOf(settings.gyroEnabled) }
     var backPressedOnce by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // Push our device metadata to the PC so the preview card shows the real
+    // battery level, steering range and device name. Refreshes periodically
+    // so battery changes propagate live.
+    LaunchedEffect(Unit) {
+        while (true) {
+            val bbm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+            val cap = bbm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            if (cap != null && cap in 0..100) {
+                inputSender.metaBatteryPercent = cap
+            }
+            inputSender.metaMaxAngle = settings.steeringMaxAngle
+            inputSender.metaDeviceType = Build.MODEL.ifBlank { "Android Phone" }
+            inputSender.sendMetaPacket()
+            inputSender.syncLayout(hudLayout.map { it.toJson().toString() })
+            delay(30_000)
+        }
+    }
 
     val onBtn: (Int, Boolean) -> Unit = { btnId, pressed ->
         activeButtons.value = if (pressed) {
@@ -326,6 +350,19 @@ fun ControllerScreen(
             ) {
                 val aw = maxWidth
                 val ah = maxHeight
+                val density = LocalDensity.current
+
+                // Advertise the exact play-area size so the PC preview preserves
+                // the phone's aspect ratio and proportions at any window size.
+                LaunchedEffect(aw, ah) {
+                    val wpx = with(density) { aw.toPx() }.toInt().coerceAtLeast(1)
+                    val hpx = with(density) { ah.toPx() }.toInt().coerceAtLeast(1)
+                    if (inputSender.metaScreenWidthPx != wpx || inputSender.metaScreenHeightPx != hpx) {
+                        inputSender.metaScreenWidthPx = wpx
+                        inputSender.metaScreenHeightPx = hpx
+                        inputSender.sendMetaPacket()
+                    }
+                }
 
                 hudLayout.forEach { widget ->
                     when {

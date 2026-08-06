@@ -51,6 +51,9 @@ object Protocol {
     const val TYPE_HEARTBEAT = 0x07.toByte()
     const val TYPE_HEARTBEAT_ACK = 0x08.toByte()
     const val TYPE_DISCONNECT = 0x05.toByte()
+    const val TYPE_META = 0x0B.toByte()
+    const val TYPE_HUD_WIDGET = 0x0C.toByte()
+    const val TYPE_HUD_FULL = 0x0D.toByte()
 
     // Input payload offsets
     const val OFF_STEERING = 0
@@ -188,6 +191,42 @@ object Protocol {
 
     fun buildHeartbeatPacket(): ByteArray {
         return buildPacket(TYPE_HEARTBEAT)
+    }
+
+    /**
+     * Build a metadata packet describing the phone:
+     *   [0] battery % (0..100, 255 = unknown)
+     *   [1-2] steering max angle uint16 LE
+     *   [3-6] screen width px uint32 LE
+     *   [7-10] screen height px uint32 LE
+     *   [11+] device type name UTF-8
+     */
+    fun buildMetaPacket(
+        batteryPercent: Int,
+        maxAngle: Int,
+        screenWidthPx: Int,
+        screenHeightPx: Int,
+        deviceType: String
+    ): ByteArray {
+        val nameBytes = deviceType.toByteArray(Charsets.UTF_8)
+        val payload = ByteArray(11 + nameBytes.size)
+        payload[0] = batteryPercent.coerceIn(0, 100).toByte()
+        // max angle u16 LE
+        val ma = maxAngle.coerceIn(0, 65535)
+        payload[1] = (ma and 0xFF).toByte()
+        payload[2] = ((ma shr 8) and 0xFF).toByte()
+        // screen w u32 LE
+        payload[3] = (screenWidthPx and 0xFF).toByte()
+        payload[4] = ((screenWidthPx shr 8) and 0xFF).toByte()
+        payload[5] = ((screenWidthPx shr 16) and 0xFF).toByte()
+        payload[6] = ((screenWidthPx shr 24) and 0xFF).toByte()
+        // screen h u32 LE
+        payload[7] = (screenHeightPx and 0xFF).toByte()
+        payload[8] = ((screenHeightPx shr 8) and 0xFF).toByte()
+        payload[9] = ((screenHeightPx shr 16) and 0xFF).toByte()
+        payload[10] = ((screenHeightPx shr 24) and 0xFF).toByte()
+        nameBytes.copyInto(payload, 11)
+        return buildPacket(TYPE_META, payload)
     }
 
     // ========== PARSING ==========

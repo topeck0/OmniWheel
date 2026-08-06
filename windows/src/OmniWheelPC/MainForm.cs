@@ -14,12 +14,19 @@ public class MainForm : Form
     // Native Win32 drag constants
     private const int WM_NCLBUTTONDOWN = 0xA1;
     private const int HT_CAPTION = 0x2;
+    private const int WM_GETMINMAXINFO = 0x24;
 
     [DllImport("user32.dll")]
     private static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
 
     [DllImport("user32.dll")]
     private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
 
     private readonly DiscoveryServer _discovery;
     private readonly InputReceiver _input;
@@ -114,6 +121,8 @@ public class MainForm : Form
         _input.OnConnected += OnDeviceConnected;
         _input.OnDisconnected += OnDeviceDisconnected;
         _input.OnLog += Log;
+        _input.OnMetaReceived += OnMetaReceived;
+        _input.OnWidgetReceived += OnWidgetReceived;
 
         _vJoy = new VJoyController();
         _vJoy.OnLog += Log;
@@ -258,15 +267,17 @@ public class MainForm : Form
         _btnClose = CreateHeaderBtn("✕", Color.FromArgb(239, 68, 68));
         _btnClose.Click += (_, _) => Close();
 
-        _btnMax = CreateHeaderBtn("□", TextMuted);
+        _btnMax = CreateHeaderBtn("\uE922", TextMuted); // maximize glyph (Segoe MDL2)
         _btnMax.Click += (_, _) =>
         {
             WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
+            UpdateMaxBtnGlyph();
         };
 
         _btnMin = CreateHeaderBtn("—", TextMuted);
         _btnMin.Click += (_, _) => WindowState = FormWindowState.Minimized;
 
+        _btnMax.Font = new Font("Segoe MDL2 Assets", 10f);
         _headerPanel.Controls.Add(_btnClose);
         _headerPanel.Controls.Add(_btnMax);
         _headerPanel.Controls.Add(_btnMin);
@@ -284,6 +295,11 @@ public class MainForm : Form
         Controls.Add(_editorView);
 
         Relayout();
+    }
+
+    private void UpdateMaxBtnGlyph()
+    {
+        _btnMax.Text = WindowState == FormWindowState.Maximized ? "\uE923" : "\uE922";
     }
 
     private Button CreateHeaderBtn(string text, Color color)
@@ -340,8 +356,8 @@ public class MainForm : Form
         };
 
         _lblDeviceName = CreateCardInfoLabel("connected device: --", 16, 44);
-        _lblPhoneIp = CreateCardInfoLabel("Phone ip: --", 16, 68);
-        _lblBattery = CreateCardInfoLabel("Battery State: --", 16, 92);
+        _lblPhoneIp = CreateCardInfoLabel("Phone IP: --", 16, 68);
+        _lblBattery = CreateCardInfoLabel("Battery: --", 16, 92);
 
         _lblPing = CreateCardInfoLabel("Current ping: -- ms", 16, 116);
         _pingGraph = new PingGraphControl { Size = new Size(90, 24), Location = new Point(165, 114) };
@@ -563,6 +579,39 @@ public class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Keep maximized frameless window within the monitor's working area so it
+    /// respects the taskbar instead of covering the whole screen.
+    /// </summary>
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WM_GETMINMAXINFO)
+        {
+            var sc = Screen.FromHandle(Handle).WorkingArea;
+            // MINMAXINFO: ptMaxSize, ptMaxPosition, ptMinTrackSize
+            var info = (MINMAXINFO)System.Runtime.InteropServices.Marshal.PtrToStructure(
+                m.LParam, typeof(MINMAXINFO))!;
+            info.ptMaxSize.X = sc.Width;
+            info.ptMaxSize.Y = sc.Height;
+            info.ptMaxPosition.X = sc.X;
+            info.ptMaxPosition.Y = sc.Y;
+            System.Runtime.InteropServices.Marshal.StructureToPtr(info, m.LParam, false);
+            m.Result = IntPtr.Zero;
+            return;
+        }
+        base.WndProc(ref m);
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MINMAXINFO
+    {
+        public System.Drawing.Point ptReserved;
+        public System.Drawing.Point ptMaxSize;
+        public System.Drawing.Point ptMaxPosition;
+        public System.Drawing.Point ptMinTrackSize;
+        public System.Drawing.Point ptMaxTrackSize;
+    }
+
     private void Relayout()
     {
         int w = ClientSize.Width;
@@ -620,9 +669,68 @@ public class MainForm : Form
         _connHeaderLabel.ForeColor = GreenDot;
 
         string devIp = _input.ConnectedDeviceIp ?? "Unknown";
-        _lblDeviceName.Text = $"connected device: Phone ({devIp})";
-        _lblPhoneIp.Text = $"Phone ip: {devIp}";
-        _lblBattery.Text = "Battery State: 95%";
+        _lblDeviceName.Text = "connected device: --";
+        _lblPhoneIp.Text = $"Phone IP: {devIp}";
+        _lblBattery.Text = "Battery: --";
+    }
+
+    private void OnMetaReceived()
+    {
+        if (InvokeRequired) { BeginInvoke(OnMetaReceived); return; }
+        var s = _input.CurrentState;
+
+        string name = string.IsNullOrWhiteSpace(s.PhoneDeviceName) ? "Android Phone" : s.PhoneDeviceName;
+        _lblDeviceName.Text = $"connected device: {name}";
+
+        if (s.PhoneBatteryPercent != 255)
+            _lblBattery.Text = $"Battery: {s.PhoneBatteryPercent}%";
+
+        _lblSteeringRange.Text = $"Steering range: {s.PhoneMaxAngle} degree";
+        _hudPreview.SteeringMaxAngle = s.PhoneMaxAngle;
+        _hudPreview.InputState = s;
+        _hudPreview.Invalidate();
+    }
+
+    private void OnWidgetReceived(string json)
+    {
+        if (InvokeRequired) { BeginInvoke(() => OnWidgetReceived(json)); return; }
+
+        if (json.StartsWith("FULL:"))
+        {
+            var loaded = HudLayoutManager.LoadLayout(json.Substring(5));
+            _hudPreview.Widgets = loaded;
+            if (_lblSteeringRange != null)
+                Log("HUD layout received from phone (" + loaded.Count + " widgets)");
+        }
+        else
+        {
+            if (json.Contains("\"remove\"", StringComparison.OrdinalIgnoreCase) && json.Contains("\"remove\":true", StringComparison.OrdinalIgnoreCase))
+            {
+                var id = ExtractId(json);
+                if (id != null) { _hudPreview.RemoveWidget(id); Log("HUD widget removed: " + id); }
+            }
+            else
+            {
+                var w = HudLayoutManager.ParseSingleWidget(json);
+                if (w != null)
+                {
+                    _hudPreview.UpsertWidget(w);
+                    Log("HUD widget update: " + w.Id);
+                }
+            }
+        }
+    }
+
+    private static string? ExtractId(string json)
+    {
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.String)
+                return id.GetString();
+        }
+        catch { }
+        return null;
     }
 
     private void OnDeviceDisconnected()
@@ -631,8 +739,9 @@ public class MainForm : Form
         _connHeaderLabel.Text = "Waiting for phone...";
         _connHeaderLabel.ForeColor = TextMuted;
         _lblDeviceName.Text = "connected device: --";
-        _lblPhoneIp.Text = "Phone ip: --";
-        _lblBattery.Text = "Battery State: --";
+        _lblPhoneIp.Text = "Phone IP: --";
+        _lblBattery.Text = "Battery: --";
+        _lblSteeringRange.Text = "Steering range: --";
         _lblPing.Text = "Current ping: -- ms";
     }
 
