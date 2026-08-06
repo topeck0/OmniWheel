@@ -39,6 +39,7 @@ import com.topeck.omniwheel.PEDAL_W_MIN_DP
 import com.topeck.omniwheel.R
 import com.topeck.omniwheel.SettingsManager
 import com.topeck.omniwheel.resetToTypeDefaults
+import kotlin.math.roundToInt
 
 @Composable
 fun HudEditorScreen(
