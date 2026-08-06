@@ -87,7 +87,6 @@ Designed for driving simulators with:
 |---------|:------:|
 | Ultra Low Latency | ✅ |
 | UDP | ✅ |
-| USB | ✅ |
 | Gyroscope | ✅ |
 | Touch Steering | ✅ |
 | Profiles | ✅ |
@@ -121,13 +120,12 @@ OmniWheel Windows
 <h2 id="games">🎮 Supported Games</h2>
 
 - Euro Truck Simulator 2
-- American Truck Simulator
 - BeamNG.drive
+- American Truck Simulator
 - Assetto Corsa
 - Assetto Corsa Competizione
 - Live For Speed
 - rFactor 2
-- Forza Horizon
 - Any game supporting vJoy
 
 ---
@@ -138,7 +136,7 @@ OmniWheel Windows
 
 <summary><b>📱 Android</b></summary>
 
-Download the latest APK from Releases.
+Download & install the latest APK from Releases.
 
 </details>
 
@@ -146,7 +144,10 @@ Download the latest APK from Releases.
 
 <summary><b>🖥 Windows</b></summary>
 
-Install the Windows Receiver and vJoy.
+Please make sure that [.NET 8 Framework](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-8.0.423-windows-x64-installer) is installed.
+
+Install [vJoy](https://sourceforge.net/projects/vjoystick/files/latest/download) from the official page on [SourceForge](https://sourceforge.net/projects/vjoystick/files/latest/download).
+Download the Windows Receiver from releases and run it.
 
 </details>
 
@@ -156,7 +157,7 @@ Install the Windows Receiver and vJoy.
 
 - [x] Planning
 - [x] Architecture
-- [ ] Android App
+- [x] Android App
 - [ ] Windows Receiver
 - [ ] USB Mode
 - [ ] Profiles
