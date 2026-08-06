@@ -159,6 +159,75 @@ fun WideButtonView(
 }
 
 /**
+ * Button that fills its HUD slot exactly (used by the game screen so the
+ * rendered size matches the HUD editor's rectangle to the pixel).
+ */
+@Composable
+fun HudButtonView(
+    button: VButton,
+    isActive: Boolean,
+    onPressed: (Int, Boolean) -> Unit,
+    hapticEnabled: Boolean = true
+) {
+    var isPressed by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+
+    val bgColor = when {
+        isActive -> button.color.copy(alpha = 0.85f)
+        isPressed -> button.color.copy(alpha = 0.45f)
+        else -> Color(0xFF16162E)
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor, RoundedCornerShape(8.dp))
+            .drawBehind {
+                val borderColor = when {
+                    isActive -> button.color.copy(alpha = 0.6f)
+                    else -> Color(0xFF2A2A44)
+                }
+                drawRoundRect(
+                    color = borderColor,
+                    cornerRadius = CornerRadius(8.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f)
+                )
+            }
+            .pointerInput(button.action) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        if (hapticEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onPressed(button.action, true)
+                        tryAwaitRelease()
+                        isPressed = false
+                        if (button.mode != ButtonMode.TOGGLE) {
+                            onPressed(button.action, false)
+                        }
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        val font = when {
+            maxHeight < 22.dp -> 9.sp
+            maxHeight < 30.dp -> 11.sp
+            maxHeight < 40.dp -> 13.sp
+            else -> 15.sp
+        }
+        Text(
+            text = button.label,
+            fontSize = font,
+            fontWeight = FontWeight.Bold,
+            color = if (isActive || isPressed) Color.White else Color(0xFF6A6A8A),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/**
  * All 18 buttons matching the reference layout.
  */
 fun allButtons(): Map<Int, VButton> = mapOf(

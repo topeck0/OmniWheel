@@ -62,7 +62,7 @@ object Protocol {
     const val OFF_GYRO_Z = 9
     const val OFF_BUTTONS_NO_GYRO = 5   // buttons start here when no gyro
     const val OFF_BUTTONS_WITH_GYRO = 11 // buttons start here when gyro
-    const val BUTTON_BYTES = 2            // always 2 bytes (up to 16 buttons)
+    const val BUTTON_BYTES = 3            // always 3 bytes (up to 24 buttons)
 
     @Volatile
     var sequenceNumber: Short = 0
@@ -169,12 +169,12 @@ object Protocol {
             payload[10] = ((gyroZ.toInt() shr 8) and 0xFF).toByte()
         }
 
-        // Button bitmap (always 2 bytes)
+        // Button bitmap (always 3 bytes)
         val btnOffset = 5 + gyroBytes
         var bitmap = 0
         for (btn in activeButtons) {
             val bitIdx = (btn - 1) // 0-indexed bit
-            if (bitIdx in 0..15) bitmap = bitmap or (1 shl bitIdx)
+            if (bitIdx in 0..23) bitmap = bitmap or (1 shl bitIdx)
         }
         payload[btnOffset] = (bitmap and 0xFF).toByte()
         payload[btnOffset + 1] = ((bitmap shr 8) and 0xFF).toByte()

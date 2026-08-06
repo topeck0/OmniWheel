@@ -182,7 +182,10 @@ fun HudEditorScreen(
         // Floating island toolbar (horizontally draggable only)
         Row(
             modifier = Modifier
-                .offset(x = toolbarX.dp, y = 12.dp)
+                .offset(
+                    x = with(density) { toolbarX.toDp() },
+                    y = 12.dp
+                )
                 .alpha(0.85f)
                 .background(Color(0xFF181828), RoundedCornerShape(24.dp))
                 .border(1.dp, Color(0xFF2A2A44), RoundedCornerShape(24.dp))
@@ -268,7 +271,10 @@ fun HudEditorScreen(
 
             Box(
                 modifier = Modifier
-                    .offset(x = popupPos.x.dp, y = popupPos.y.dp)
+                    .offset(
+                        x = with(density) { popupPos.x.toDp() },
+                        y = with(density) { popupPos.y.toDp() }
+                    )
                     .width(240.dp)
                     .heightIn(max = 320.dp)
                     .background(Color(0xFF141424), RoundedCornerShape(12.dp))
@@ -295,12 +301,21 @@ fun HudEditorScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Properties: ${widget.label}",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                        if (!widget.isSteering) {
+                            Text(
+                                text = "Properties: ${widget.label}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        } else {
+                            Text(
+                                text = "Scale (wheel)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
                         Text(
                             text = "✕",
                             fontSize = 14.sp,
@@ -393,19 +408,21 @@ fun HudEditorScreen(
 
                     Spacer(Modifier.height(4.dp))
 
-                    Button(
-                        onClick = {
-                            pushUndo()
-                            widgets.removeAll { it.id == widget.id }
-                            selectedWidget = null
-                            hasChanges = true
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(36.dp)
-                    ) {
-                        Text("Delete", color = Color.White, fontSize = 12.sp)
+                    if (!widget.isSteering) {
+                        Button(
+                            onClick = {
+                                pushUndo()
+                                widgets.removeAll { it.id == widget.id }
+                                selectedWidget = null
+                                hasChanges = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(36.dp)
+                        ) {
+                            Text("Delete", color = Color.White, fontSize = 12.sp)
+                        }
                     }
                 }
             }

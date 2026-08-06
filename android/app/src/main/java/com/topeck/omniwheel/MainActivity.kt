@@ -16,7 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.topeck.omniwheel.network.DiscoveryClient
@@ -240,7 +239,6 @@ fun ControllerScreen(
     val activeButtons = remember { mutableStateOf(setOf<Int>()) }
     val btnMap = remember { allButtons() }
     val hudLayout = remember { settings.loadHudLayout() }
-    val density = LocalDensity.current
     var lastPacketCount by remember { mutableIntStateOf(0) }
     var gyroEnabled by remember { mutableStateOf(settings.gyroEnabled) }
     var backPressedOnce by remember { mutableStateOf(false) }
@@ -328,8 +326,6 @@ fun ControllerScreen(
             ) {
                 val aw = maxWidth
                 val ah = maxHeight
-                val awPx = with(density) { aw.toPx() }
-                val ahPx = with(density) { ah.toPx() }
 
                 hudLayout.forEach { widget ->
                     when {
@@ -373,29 +369,12 @@ fun ControllerScreen(
                         else -> HudSlot(widget, aw, ah) {
                             val action = widget.vJoyBtn
                             val b = btnMap[action] ?: VButton(action, widget.label, action = action)
-                            val active = isActive(action)
-                            val wdp = with(density) { (awPx * widget.wFrac).toDp().value.toInt() }
-                            val hdp = with(density) { (ahPx * widget.hFrac).toDp().value.toInt() }
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                if (widget.wFrac > widget.hFrac) {
-                                    WideButtonView(
-                                        button = b,
-                                        isActive = active,
-                                        onPressed = onBtn,
-                                        widthDp = wdp,
-                                        heightDp = hdp,
-                                        hapticEnabled = settings.hapticFeedback
-                                    )
-                                } else {
-                                    VButtonView(
-                                        button = b,
-                                        isActive = active,
-                                        onPressed = onBtn,
-                                        size = minOf(wdp, hdp),
-                                        hapticEnabled = settings.hapticFeedback
-                                    )
-                                }
-                            }
+                            HudButtonView(
+                                button = b,
+                                isActive = isActive(action),
+                                onPressed = onBtn,
+                                hapticEnabled = settings.hapticFeedback
+                            )
                         }
                     }
                 }

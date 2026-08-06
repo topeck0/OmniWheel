@@ -159,21 +159,21 @@ public class InputReceiver : IDisposable
             CurrentState.GyroX = (short)(data[off + 5] | (data[off + 6] << 8));
             CurrentState.GyroY = (short)(data[off + 7] | (data[off + 8] << 8));
             CurrentState.GyroZ = (short)(data[off + 9] | (data[off + 10] << 8));
-            ParseButtons(data, off + 11, Math.Min(2, payloadLen - 11));
+            ParseButtons(data, off + 11, Math.Min(3, payloadLen - 11));
         }
         else if (payloadLen >= 7)
         {
             CurrentState.GyroX = 0;
             CurrentState.GyroY = 0;
             CurrentState.GyroZ = 0;
-            ParseButtons(data, off + 5, Math.Min(2, payloadLen - 5));
+            ParseButtons(data, off + 5, Math.Min(3, payloadLen - 5));
         }
         else
         {
             CurrentState.GyroX = (short)(data[off + 5] | (data[off + 6] << 8));
             CurrentState.GyroY = (short)(data[off + 7] | (data[off + 8] << 8));
             CurrentState.GyroZ = (short)(data[off + 9] | (data[off + 10] << 8));
-            ParseButtons(data, off + 11, Math.Min(2, payloadLen - 11));
+            ParseButtons(data, off + 11, Math.Min(3, payloadLen - 11));
         }
 
         CurrentState.Timestamp = DateTime.UtcNow;
@@ -186,7 +186,7 @@ public class InputReceiver : IDisposable
     {
         Array.Clear(CurrentState.ButtonStates, 0, CurrentState.ButtonStates.Length);
         
-        for (int i = 0; i < length && i < 2; i++)
+        for (int i = 0; i < length && i < 3; i++)
         {
             byte b = data[offset + i];
             for (int bit = 0; bit < 8; bit++)
@@ -194,7 +194,7 @@ public class InputReceiver : IDisposable
                 if ((b & (1 << bit)) != 0)
                 {
                     int btnNum = i * 8 + bit + 1;
-                    if (btnNum <= 16) CurrentState.ButtonStates[btnNum - 1] = true;
+                    if (btnNum <= 24) CurrentState.ButtonStates[btnNum - 1] = true;
                 }
             }
         }
@@ -222,7 +222,7 @@ public class InputState
     public short GyroY { get; set; }
     public short GyroZ { get; set; }
     
-    public bool[] ButtonStates { get; } = new bool[16];
+    public bool[] ButtonStates { get; } = new bool[24];
     public bool[] Buttons => ButtonStates;
     
     public DateTime Timestamp { get; set; }

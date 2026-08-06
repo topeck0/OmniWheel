@@ -43,7 +43,7 @@ public static class Protocol
     public const int OffGyroX = 5;
     public const int OffGyroY = 7;
     public const int OffGyroZ = 9;
-    public const int ButtonBytes = 2; // always 2 bytes for up to 16 buttons
+    public const int ButtonBytes = 3; // always 3 bytes for up to 24 buttons
 
     // ========== CRC-16/CCITT-FALSE LOOKUP TABLE ==========
     private static readonly ushort[] CrcTable = new ushort[256];
