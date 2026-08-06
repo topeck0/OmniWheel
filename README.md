@@ -148,6 +148,8 @@ Please make sure that [.NET 8 Framework](https://dotnet.microsoft.com/en-us/down
 
 Install [vJoy](https://sourceforge.net/projects/vjoystick/files/latest/download) from the official page on [SourceForge](https://sourceforge.net/projects/vjoystick/files/latest/download).
 
+Importand Note: Run Configure vJoy and set Numbers of Buttons to whatever number you want >=30 
+
 Download the Windows Receiver from releases and run it.
 
 </details>
