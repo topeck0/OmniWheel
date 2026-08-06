@@ -147,6 +147,7 @@ Download & install the latest APK from Releases.
 Please make sure that [.NET 8 Framework](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-8.0.423-windows-x64-installer) is installed.
 
 Install [vJoy](https://sourceforge.net/projects/vjoystick/files/latest/download) from the official page on [SourceForge](https://sourceforge.net/projects/vjoystick/files/latest/download).
+
 Download the Windows Receiver from releases and run it.
 
 </details>
