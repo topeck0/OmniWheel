@@ -164,17 +164,43 @@ class SettingsManager(context: Context) {
         }
     }
 
-    // Write the current layout JSON to a file the developer can grab.
+    // Write the current layout JSON to the public Downloads folder via
+    // MediaStore so it is reachable from any file manager (Android 11+).
     fun exportLayoutJson(context: Context): String? {
         var json = prefs.getString("hud_layout", "").orEmpty()
         if (json.isBlank()) json = prefs.getString("default_hud_layout", "").orEmpty()
         if (json.isBlank()) return null
         return try {
-            val dir = context.getExternalFilesDir(null)
-                ?: context.filesDir
-            val file = java.io.File(dir, "omniwheel_hud_layout.json")
-            file.writeText(json)
-            file.absolutePath
+            val jsonBytes = json.toByteArray()
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val resolver = context.contentResolver
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "omniwheel_hud_layout.json")
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/json")
+                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return null
+                resolver.openOutputStream(uri)?.use { it.write(jsonBytes) }
+                val dn = android.provider.MediaStore.MediaColumns.DISPLAY_NAME
+                val rel = android.provider.MediaStore.MediaColumns.RELATIVE_PATH
+                val proj = arrayOf(dn, rel)
+                resolver.query(uri, proj, null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        val display = c.getString(c.getColumnIndexOrThrow(dn)) ?: ""
+                        val folder = c.getString(c.getColumnIndexOrThrow(rel)) ?: ""
+                        "Download/$display"
+                    } else uri.toString()
+                } ?: uri.toString()
+            } else {
+                val dir = android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS
+                )
+                if (!dir.exists()) dir.mkdirs()
+                val file = java.io.File(dir, "omniwheel_hud_layout.json")
+                file.writeBytes(jsonBytes)
+                file.absolutePath
+            }
         } catch (e: Exception) {
             null
         }
