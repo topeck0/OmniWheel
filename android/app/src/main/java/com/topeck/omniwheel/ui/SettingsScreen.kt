@@ -1,5 +1,8 @@
 package com.topeck.omniwheel.ui
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,12 +15,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.topeck.omniwheel.R
 import com.topeck.omniwheel.SettingsManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * Settings screen with organized sections.
@@ -27,7 +34,9 @@ fun SettingsScreen(
     settings: SettingsManager,
     onBack: () -> Unit
 ) {
-    var expandedSection by remember { mutableStateOf<String?>("steering") }
+    var expandedSection by remember { mutableStateOf<String?>(null) }
+    val scrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
     
     Column(
         modifier = Modifier
@@ -69,7 +78,7 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -79,7 +88,9 @@ fun SettingsScreen(
                 icon = "SR",
                 color = Color(0xFF6366F1),
                 isExpanded = expandedSection == "steering",
-                onToggle = { expandedSection = if (expandedSection == "steering") null else "steering" }
+                onToggle = { expandedSection = if (expandedSection == "steering") null else "steering" },
+                scrollState = scrollState,
+                coroutineScope = coroutineScope
             ) {
                 SettingsSlider(
                     label = "Max Angle",
@@ -131,7 +142,9 @@ fun SettingsScreen(
                 icon = "PD",
                 color = Color(0xFF22C55E),
                 isExpanded = expandedSection == "pedals",
-                onToggle = { expandedSection = if (expandedSection == "pedals") null else "pedals" }
+                onToggle = { expandedSection = if (expandedSection == "pedals") null else "pedals" },
+                scrollState = scrollState,
+                coroutineScope = coroutineScope
             ) {
                 SettingsToggle(
                     label = "Enable Clutch",
@@ -160,7 +173,9 @@ fun SettingsScreen(
                 icon = "GY",
                 color = Color(0xFF22D3EE),
                 isExpanded = expandedSection == "gyro",
-                onToggle = { expandedSection = if (expandedSection == "gyro") null else "gyro" }
+                onToggle = { expandedSection = if (expandedSection == "gyro") null else "gyro" },
+                scrollState = scrollState,
+                coroutineScope = coroutineScope
             ) {
                 SettingsToggle(
                     label = "Enable Gyroscope",
@@ -211,7 +226,9 @@ fun SettingsScreen(
                 icon = "NW",
                 color = Color(0xFFF59E0B),
                 isExpanded = expandedSection == "network",
-                onToggle = { expandedSection = if (expandedSection == "network") null else "network" }
+                onToggle = { expandedSection = if (expandedSection == "network") null else "network" },
+                scrollState = scrollState,
+                coroutineScope = coroutineScope
             ) {
                 SettingsSlider(
                     label = "Send Rate",
@@ -243,7 +260,9 @@ fun SettingsScreen(
                 icon = "DP",
                 color = Color(0xFF8B5CF6),
                 isExpanded = expandedSection == "display",
-                onToggle = { expandedSection = if (expandedSection == "display") null else "display" }
+                onToggle = { expandedSection = if (expandedSection == "display") null else "display" },
+                scrollState = scrollState,
+                coroutineScope = coroutineScope
             ) {
                 SettingsToggle(
                     label = "Show Angle Text",
@@ -265,7 +284,9 @@ fun SettingsScreen(
                 icon = "BT",
                 color = Color(0xFFEF4444),
                 isExpanded = expandedSection == "buttons",
-                onToggle = { expandedSection = if (expandedSection == "buttons") null else "buttons" }
+                onToggle = { expandedSection = if (expandedSection == "buttons") null else "buttons" },
+                scrollState = scrollState,
+                coroutineScope = coroutineScope
             ) {
                 SettingsSlider(
                     label = "Top Row Size",
@@ -295,7 +316,9 @@ fun SettingsScreen(
                 icon = "!!",
                 color = Color(0xFFEF4444),
                 isExpanded = expandedSection == "reset",
-                onToggle = { expandedSection = if (expandedSection == "reset") null else "reset" }
+                onToggle = { expandedSection = if (expandedSection == "reset") null else "reset" },
+                scrollState = scrollState,
+                coroutineScope = coroutineScope
             ) {
                 SettingsAction(
                     label = "Reset All Settings to Default",
@@ -319,17 +342,31 @@ private fun SettingsSection(
     color: Color,
     isExpanded: Boolean,
     onToggle: () -> Unit,
+    scrollState: ScrollState,
+    coroutineScope: CoroutineScope,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    var sectionY by remember { mutableStateOf(0) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xFF14142A), MaterialTheme.shapes.medium)
+            .onGloballyPositioned { coordinates ->
+                sectionY = coordinates.positionInParent().y.toInt()
+            }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onToggle() }
+                .clickable {
+                    onToggle()
+                    if (!isExpanded) {
+                        coroutineScope.launch {
+                            scrollState.animateScrollTo(maxOf(0, sectionY - 12))
+                        }
+                    }
+                }
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -366,7 +403,11 @@ private fun SettingsSection(
             )
         }
         
-        if (isExpanded) {
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically(animationSpec = tween(250, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(150)),
+            exit = shrinkVertically(animationSpec = tween(250, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(150))
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
