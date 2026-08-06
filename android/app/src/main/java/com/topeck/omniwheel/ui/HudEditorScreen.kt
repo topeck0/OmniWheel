@@ -26,10 +26,15 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.topeck.omniwheel.BUTTON_DEF_H_DP
+import com.topeck.omniwheel.BUTTON_DEF_W_DP
+import com.topeck.omniwheel.HUD_REF_H
+import com.topeck.omniwheel.HUD_REF_W
 import com.topeck.omniwheel.HudSlot
 import com.topeck.omniwheel.HudWidget
 import com.topeck.omniwheel.R
 import com.topeck.omniwheel.SettingsManager
+import com.topeck.omniwheel.resetToTypeDefaults
 
 @Composable
 fun HudEditorScreen(
@@ -109,12 +114,16 @@ fun HudEditorScreen(
                                 .fillMaxSize()
                                 .clip(shape)
                                 .background(
-                                    if (selected) Color(0x3300E5FF)
-                                    else if (widget.isSteering) Color.Transparent
-                                    else Color(0x221E1E36)
+                                    when {
+                                        selected -> Color(0x3300E5FF)
+                                        widget.isSteering || widget.isPedal -> Color.Transparent
+                                        else -> Color(0x221E1E36)
+                                    }
                                 )
                                 .border(
-                                    width = if (selected) 2.dp else 1.dp,
+                                    width = if (selected) 2.dp
+                                    else if (widget.isSteering || widget.isPedal) 0.dp
+                                    else 1.dp,
                                     color = if (selected) Color(0xFF00E5FF)
                                     else Color(0xFF2A2A44).copy(alpha = 0.5f),
                                     shape = shape
@@ -126,9 +135,10 @@ fun HudEditorScreen(
                                             change.consume()
                                             val cur = widgets.getOrNull(idx)
                                             if (cur != null) {
+                                                // Move 1:1 with the finger, independent of scale.
                                                 widgets[idx] = cur.copy(
-                                                    cx = (cur.cx + dragAmount.x / awPx / cur.scale).coerceIn(0f, 1f),
-                                                    cy = (cur.cy + dragAmount.y / ahPx / cur.scale).coerceIn(0f, 1f)
+                                                    cx = (cur.cx + dragAmount.x / awPx).coerceIn(0f, 1f),
+                                                    cy = (cur.cy + dragAmount.y / ahPx).coerceIn(0f, 1f)
                                                 )
                                                 hasChanges = true
                                             }
@@ -240,7 +250,14 @@ fun HudEditorScreen(
                 onClick = {
                     pushUndo()
                     val nextBtnNum = widgets.count { it.id.startsWith("btn_") } + 1
-                    widgets.add(HudWidget("btn_$nextBtnNum", "$nextBtnNum", 0.3f, 0.5f, 0.04f, 0.074f, nextBtnNum))
+                    widgets.add(
+                        HudWidget(
+                            "btn_$nextBtnNum", "$nextBtnNum",
+                            0.3f, 0.5f,
+                            BUTTON_DEF_W_DP / HUD_REF_W, BUTTON_DEF_H_DP / HUD_REF_H,
+                            nextBtnNum
+                        )
+                    )
                     hasChanges = true
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
@@ -374,11 +391,14 @@ fun HudEditorScreen(
                         )
                     }
 
-                    // Width & height hidden for steering wheels (circular, scale only)
+                    // Width & height hidden for steering wheels (circular, scale only).
+                    // Pedals use a wide width range: 300dp .. 1000dp.
                     if (!widget.isSteering) {
-                        Text("Width: ${(widget.wFrac * 960).toInt()}dp", fontSize = 11.sp, color = Color.Gray)
+                        val wMin = if (widget.isPedal) 300f / HUD_REF_W else 0.02f
+                        val wMax = if (widget.isPedal) 1000f / HUD_REF_W else 0.5f
+                        Text("Width: ${(widget.wFrac * HUD_REF_W).toInt()}dp", fontSize = 11.sp, color = Color.Gray)
                         Slider(
-                            value = widget.wFrac,
+                            value = widget.wFrac.coerceIn(wMin, wMax),
                             onValueChange = { nw ->
                                 if (idx >= 0) {
                                     val updated = widget.copy(wFrac = nw)
@@ -387,12 +407,12 @@ fun HudEditorScreen(
                                     hasChanges = true
                                 }
                             },
-                            valueRange = 0.02f..0.5f
+                            valueRange = wMin..wMax
                         )
 
-                        Text("Height: ${(widget.hFrac * 540).toInt()}dp", fontSize = 11.sp, color = Color.Gray)
+                        Text("Height: ${(widget.hFrac * HUD_REF_H).toInt()}dp", fontSize = 11.sp, color = Color.Gray)
                         Slider(
-                            value = widget.hFrac,
+                            value = widget.hFrac.coerceIn(0.02f, 0.9f),
                             onValueChange = { nh ->
                                 if (idx >= 0) {
                                     val updated = widget.copy(hFrac = nh)
@@ -406,6 +426,31 @@ fun HudEditorScreen(
                     }
 
                     Spacer(Modifier.height(4.dp))
+
+                    // Reset properties to this widget type's defaults (before Delete).
+                    Button(
+                        onClick = {
+                            pushUndo()
+                            val updated = widget.resetToTypeDefaults()
+                            widgets[idx] = updated
+                            selectedWidget = updated
+                            hasChanges = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
+                    ) {
+                        Text(
+                            text = when {
+                                widget.isSteering -> "Reset Scale"
+                                widget.isPedal -> "Reset Pedal"
+                                else -> "Reset Button"
+                            },
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                    }
 
                     if (!widget.isSteering) {
                         Button(
