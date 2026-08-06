@@ -82,4 +82,18 @@ public static class HudLayoutManager
 
         return JsonSerializer.Deserialize<List<HudWidget>>(DefaultLayoutJson)!;
     }
+
+    /// <summary>Parse a single-widget JSON object sent live from the phone.</summary>
+    public static HudWidget? ParseSingleWidget(string json)
+    {
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return JsonSerializer.Deserialize<HudWidget>(json, options);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

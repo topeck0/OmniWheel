@@ -52,6 +52,72 @@ class InputSender(private val context: Context) {
     @Volatile var activeButtons: Set<Int> = emptySet()
     @Volatile var gyroActive: Boolean = false
 
+    // Device info to advertise (battery, steering range, screen, name)
+    @Volatile var metaBatteryPercent: Int = 255
+    @Volatile var metaMaxAngle: Int = 900
+    @Volatile var metaScreenWidthPx: Int = 0
+    @Volatile var metaScreenHeightPx: Int = 0
+    @Volatile var metaDeviceType: String = "Android"
+
+    private val metaLock = Any()
+    private val sentWidgetJson = HashMap<String, String>()
+
+    fun sendMetaPacket() {
+        val sock = udpSocket ?: return
+        val addr = try { InetSocketAddress(targetIp, Protocol.INPUT_PORT) } catch (e: Exception) { return }
+        try {
+            val pkt = Protocol.buildMetaPacket(
+                metaBatteryPercent, metaMaxAngle,
+                metaScreenWidthPx, metaScreenHeightPx,
+                metaDeviceType
+            )
+            sock.send(DatagramPacket(pkt, pkt.size, addr))
+        } catch (e: Exception) {
+            if (_errorCount <= 3) Log.w(TAG, "Meta send: ${e.message}")
+        }
+    }
+
+    /**
+     * Send HUD layout widgets to the receiver. Only widgets whose JSON changed
+     * since the last successful send (or never sent) go over the wire — nothing
+     * is resent from scratch. Each packet carries one widget (~<255B).
+     */
+    fun syncLayout(widgetJsons: List<String>) {
+        val sock = udpSocket ?: return
+        val addr = try { InetSocketAddress(targetIp, Protocol.INPUT_PORT) } catch (e: Exception) { return }
+        val currentIds = HashSet<String>()
+        synchronized(metaLock) {
+            for (json in widgetJsons) {
+                // Key on the widget's id field.
+                var id = ""
+                try {
+                    id = new org.json.JSONObject(json).getString("id")
+                } catch (e: Exception) {
+                    continue
+                }
+                currentIds.add(id)
+                val prev = sentWidgetJson[id]
+                if (prev != json) {
+                    try {
+                        val pkt = Protocol.buildPacket(Protocol.TYPE_HUD_WIDGET, json.toByteArray(Charsets.UTF_8))
+                        sock.send(DatagramPacket(pkt, pkt.size, addr))
+                        sentWidgetJson[id] = json
+                    } catch (e: Exception) { Log.w(TAG, "Widget send: ${e.message}") }
+                }
+            }
+            // Notify server of deletions as an EMPTY replace
+            val removed = sentWidgetJson.keys.toList() - currentIds
+            for (id in removed) {
+                try {
+                    val json = "{\"id\":\"$id\",\"remove\":true}"
+                    val pkt = Protocol.buildPacket(Protocol.TYPE_HUD_WIDGET, json.toByteArray(Charsets.UTF_8))
+                    sock.send(DatagramPacket(pkt, pkt.size, addr))
+                } catch (e: Exception) { }
+                sentWidgetJson.remove(id)
+            }
+        }
+    }
+
     // Connection state
     enum class State { DISCONNECTED, CONNECTING, CONNECTED }
     @Volatile var state: State = State.DISCONNECTED; private set

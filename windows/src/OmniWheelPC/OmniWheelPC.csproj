@@ -15,4 +15,8 @@
     <PublishSingleFile>true</PublishSingleFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="steering_wheel.png" />
+  </ItemGroup>
+
 </Project>
