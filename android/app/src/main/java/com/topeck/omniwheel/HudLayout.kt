@@ -59,35 +59,33 @@ fun HudWidget.resetToTypeDefaults(): HudWidget {
 }
 
 /**
- * Default layout that reproduces the reference ControllerScreen arrangement.
- * Fractions are relative to the play area (nominal reference 960 x 514).
+ * Default layout (built-in) — this is the phone layout the user settled on.
+ * Fractions are relative to the play area (nominal reference 960 x 540).
  */
 fun defaultControllerLayout(): List<HudWidget> = listOf(
     // Steering wheel (center-left zone)
-    HudWidget("steering", "Steering", 0.205f, 0.47f, 0.32f, 0.62f, 0, 1f, isCircular = true, isSteering = true),
-    // Pedals (far right vertical column). Default size 120x470dp.
-    HudWidget("clutch", "CLUTCH", 0.6675f, 0.56f, PEDAL_DEF_W_DP / HUD_REF_W, PEDAL_DEF_H_DP / HUD_REF_H, 0, 1f, isPedal = true),
-    HudWidget("brake", "BRAKE", 0.8025f, 0.56f, PEDAL_DEF_W_DP / HUD_REF_W, PEDAL_DEF_H_DP / HUD_REF_H, 0, 1f, isPedal = true),
-    HudWidget("gas", "GAS", 0.9375f, 0.56f, PEDAL_DEF_W_DP / HUD_REF_W, PEDAL_DEF_H_DP / HUD_REF_H, 0, 1f, isPedal = true),
-    // Buttons: 75x84dp default (wFrac = 75/960 = 0.078, hFrac = 84/540 = 0.156).
-    // Placed in a 4x5 grid with enough spacing so they never overlap.
-    HudWidget("btn_5", "5", 0.43f, 0.13f, 0.078f, 0.156f, 5),
-    HudWidget("btn_6", "6", 0.51f, 0.13f, 0.078f, 0.156f, 6),
-    HudWidget("btn_7", "7", 0.59f, 0.13f, 0.078f, 0.156f, 7),
-    HudWidget("btn_18", "18", 0.67f, 0.13f, 0.078f, 0.156f, 18),
-    HudWidget("btn_4", "4", 0.43f, 0.31f, 0.078f, 0.156f, 4),
-    HudWidget("btn_8", "8", 0.51f, 0.31f, 0.078f, 0.156f, 8),
-    HudWidget("btn_1", "1", 0.59f, 0.31f, 0.078f, 0.156f, 1),
-    HudWidget("btn_3", "3", 0.67f, 0.31f, 0.078f, 0.156f, 3),
-    HudWidget("btn_2", "2", 0.43f, 0.49f, 0.078f, 0.156f, 2),
-    HudWidget("btn_13", "13", 0.51f, 0.49f, 0.078f, 0.156f, 13),
-    HudWidget("btn_9", "9", 0.59f, 0.49f, 0.078f, 0.156f, 9),
-    HudWidget("btn_15", "15", 0.67f, 0.49f, 0.078f, 0.156f, 15),
-    HudWidget("btn_10", "10", 0.43f, 0.67f, 0.078f, 0.156f, 10),
-    HudWidget("btn_11", "11", 0.51f, 0.67f, 0.078f, 0.156f, 11),
-    HudWidget("btn_12", "12", 0.59f, 0.67f, 0.078f, 0.156f, 12),
-    HudWidget("btn_17", "17", 0.67f, 0.67f, 0.078f, 0.156f, 17),
-    HudWidget("btn_14", "14", 0.43f, 0.85f, 0.078f, 0.156f, 14)
+    HudWidget("steering", "Steering", 0.1707f, 0.5969f, 0.3200f, 0.6200f, 0, 1f, isCircular = true, isSteering = true),
+    // Pedals
+    HudWidget("clutch", "CLUTCH", 0.1884f, 0.5794f, 0.1250f, 0.5852f, 0, 1f, isPedal = true),
+    HudWidget("brake", "BRAKE", 0.7941f, 0.5471f, 0.0986f, 0.6645f, 0, 0.9982f, isPedal = true),
+    HudWidget("gas", "GAS", 0.9107f, 0.5510f, 0.0986f, 0.6645f, 0, 1f, isPedal = true),
+    // Buttons
+    HudWidget("btn_1", "9", 0.9057f, 0.0619f, 0.1385f, 0.2444f, 9),
+    HudWidget("btn_2", "10", 0.7491f, 0.0640f, 0.1354f, 0.2574f, 10),
+    HudWidget("btn_3", "11", 0.6040f, 0.0870f, 0.1094f, 0.2204f, 11),
+    HudWidget("btn_4", "4", 0.0352f, 0.3200f, 0.0781f, 0.1556f, 4),
+    HudWidget("btn_5", "5", 0.3164f, 0.3285f, 0.0781f, 0.1556f, 5),
+    HudWidget("btn_6", "6", 0.0971f, 0.1672f, 0.0781f, 0.1556f, 6),
+    HudWidget("btn_7", "7", 0.1796f, 0.1644f, 0.0781f, 0.1556f, 7),
+    HudWidget("btn_8", "8", 0.2628f, 0.1672f, 0.0781f, 0.1556f, 8),
+    HudWidget("btn_9", "1", 0.6554f, 0.6198f, 0.1042f, 0.1852f, 1),
+    HudWidget("btn_10", "2", 0.5709f, 0.4205f, 0.0781f, 0.1556f, 2),
+    HudWidget("btn_11", "3", 0.6612f, 0.8448f, 0.0781f, 0.1556f, 3),
+    HudWidget("btn_12", "12", 0.0325f, 0.9146f, 0.0500f, 0.1056f, 12),
+    HudWidget("btn_13", "14", 0.4288f, 0.7018f, 0.0854f, 0.1556f, 14),
+    HudWidget("btn_14", "15", 0.5198f, 0.7007f, 0.0917f, 0.1556f, 15),
+    HudWidget("btn_15", "16", 0.4740f, 0.8625f, 0.1813f, 0.1556f, 16),
+    HudWidget("btn_16", "13", 0.0157f, 0.7715f, 0.0781f, 0.1556f, 13)
 )
 
 fun HudWidget.toJson(): JSONObject = JSONObject().apply {
