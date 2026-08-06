@@ -26,7 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 
-enum class AppScreen { CONNECTION, CONTROLLER, SETTINGS }
+enum class AppScreen { CONNECTION, CONTROLLER, SETTINGS, HUD_EDITOR, LOGS }
 
 class MainActivity : ComponentActivity() {
 
@@ -131,32 +131,42 @@ class MainActivity : ComponentActivity() {
                         label = "screenTransition"
                     ) { currentScreen ->
                         when (currentScreen) {
-                            AppScreen.CONNECTION -> ConnectionScreen(
-                                discovery = discovery,
-                                inputSender = inputSender,
-                                settings = settings,
-                                onConnected = { ip ->
-                                    connectedIp = ip
-                                    screen = AppScreen.CONTROLLER
-                                },
-                                onOpenSettings = { screen = AppScreen.SETTINGS }
-                            )
-                            AppScreen.CONTROLLER -> ControllerScreen(
-                                inputSender = inputSender,
-                                gyroManager = gyroManager,
-                                settings = settings,
-                                connectedIp = connectedIp,
-                                onBack = {
-                                    gyroManager.disable()
-                                    inputSender.disconnect()
-                                    connectedIp = ""
-                                    screen = AppScreen.CONNECTION
-                                }
-                            )
-                            AppScreen.SETTINGS -> SettingsScreen(
-                                settings = settings,
-                                onBack = { screen = AppScreen.CONNECTION }
-                            )
+                             AppScreen.CONNECTION -> ConnectionScreen(
+                                 discovery = discovery,
+                                 inputSender = inputSender,
+                                 settings = settings,
+                                 onConnected = { ip ->
+                                     connectedIp = ip
+                                     screen = AppScreen.CONTROLLER
+                                 },
+                                 onOpenSettings = { screen = AppScreen.SETTINGS },
+                                 onOpenHudEditor = { screen = AppScreen.HUD_EDITOR }
+                             )
+                             AppScreen.CONTROLLER -> ControllerScreen(
+                                 inputSender = inputSender,
+                                 gyroManager = gyroManager,
+                                 settings = settings,
+                                 connectedIp = connectedIp,
+                                 onBack = {
+                                     gyroManager.disable()
+                                     inputSender.disconnect()
+                                     connectedIp = ""
+                                     screen = AppScreen.CONNECTION
+                                 }
+                             )
+                             AppScreen.SETTINGS -> SettingsScreen(
+                                 settings = settings,
+                                 onBack = { screen = AppScreen.CONNECTION },
+                                 onOpenLogs = { screen = AppScreen.LOGS }
+                             )
+                             AppScreen.HUD_EDITOR -> HudEditorScreen(
+                                 settings = settings,
+                                 onBack = { screen = AppScreen.CONNECTION }
+                             )
+                             AppScreen.LOGS -> LogsScreen(
+                                 logs = appLogs,
+                                 onBack = { screen = AppScreen.SETTINGS }
+                             )
                         }
                     }
                 }

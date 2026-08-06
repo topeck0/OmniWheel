@@ -32,7 +32,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     settings: SettingsManager,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenLogs: () -> Unit
 ) {
     var expandedSection by remember { mutableStateOf<String?>(null) }
     val scrollState = rememberScrollState()
@@ -307,6 +308,24 @@ fun SettingsScreen(
                     description = "Vibrate on button press",
                     checked = settings.hapticFeedback,
                     onCheckedChange = { settings.hapticFeedback = it }
+                )
+            }
+            
+            // SYSTEM LOGS SECTION
+            SettingsSection(
+                title = "System Logs",
+                icon = "LG",
+                color = Color(0xFF3B82F6),
+                isExpanded = expandedSection == "logs",
+                onToggle = { expandedSection = if (expandedSection == "logs") null else "logs" },
+                scrollState = scrollState,
+                coroutineScope = coroutineScope
+            ) {
+                SettingsAction(
+                    label = "View Full Screen Logs",
+                    description = "Open full screen system logs viewer with copy support",
+                    color = Color(0xFF3B82F6),
+                    onClick = { onOpenLogs() }
                 )
             }
             

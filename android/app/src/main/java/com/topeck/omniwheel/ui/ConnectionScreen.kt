@@ -33,7 +33,8 @@ fun ConnectionScreen(
     inputSender: InputSender,
     settings: SettingsManager,
     onConnected: (String) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenHudEditor: () -> Unit
 ) {
     val devices = remember { mutableStateOf<List<DiscoveryClient.DiscoveredDevice>>(emptyList()) }
     val logs = remember { mutableStateListOf<String>() }
@@ -141,7 +142,7 @@ fun ConnectionScreen(
                     unfocusedContainerColor = Color(0xFF12122A),
                     focusedContainerColor = Color(0xFF14142E),
                 ),
-                modifier = Modifier.weight(1f).height(48.dp)
+                modifier = Modifier.weight(1f).height(56.dp)
             )
 
             Button(
@@ -288,27 +289,20 @@ fun ConnectionScreen(
 
         Spacer(Modifier.height(8.dp))
 
-        // Log
-        Text(
-            text = "Log",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color(0xFF444444)
-        )
-        Spacer(Modifier.height(4.dp))
-        Box(
+        // HUD Editor Button
+        Button(
+            onClick = { onOpenHudEditor() },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E36)),
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(0.25f)
-                .background(Color(0xFF0A0A14), MaterialTheme.shapes.small)
-                .padding(10.dp)
+                .height(48.dp),
+            shape = MaterialTheme.shapes.medium
         ) {
             Text(
-                text = logText.ifEmpty { "Waiting..." },
-                fontSize = 9.sp,
-                color = Color(0xFF555555),
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                lineHeight = 13.sp
+                text = "HUD Editor",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF00E5FF)
             )
         }
     }
