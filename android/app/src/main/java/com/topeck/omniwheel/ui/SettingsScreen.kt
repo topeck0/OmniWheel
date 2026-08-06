@@ -1,5 +1,6 @@
 package com.topeck.omniwheel.ui
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -42,6 +43,7 @@ fun SettingsScreen(
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
     var exportedPath by remember { mutableStateOf<String?>(null) }
+    val ctx = LocalContext.current
 
     BackHandler {
         onBack()
@@ -358,11 +360,10 @@ fun SettingsScreen(
                     description = "Share the layout JSON with full details: positions, sizes, scale, vJoy mapping",
                     color = Color(0xFF14B8A6),
                     onClick = {
-                        val ctx = LocalContext.current
                         settings.saveCurrentAsDefaultLayout()
                         settings.exportLayoutJson(ctx)?.let { path ->
                             exportedPath = path
-                            val sendIntent = android.content.Intent(Intent.ACTION_SEND).apply {
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "application/json"
                                 putExtra(Intent.EXTRA_SUBJECT, "OmniWheel HUD Layout")
                                 putExtra(Intent.EXTRA_TEXT, settings.loadHudLayout().let { widgetListToJson(it) })
