@@ -600,7 +600,7 @@ private fun DpValuesRow(
                 contentPadding = PaddingValues(0.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = Color(0xFF00E5FF),
-                    borderColor = Color(0xFF2A2A44)
+                    disabledContentColor = Color(0xFF2A2A44)
                 )
             ) {
                 Text("−", fontSize = 16.sp, color = Color(0xFF00E5FF))
@@ -617,7 +617,7 @@ private fun DpValuesRow(
                 contentPadding = PaddingValues(0.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = Color(0xFF00E5FF),
-                    borderColor = Color(0xFF2A2A44)
+                    disabledContentColor = Color(0xFF2A2A44)
                 )
             ) {
                 Text("+", fontSize = 16.sp, color = Color(0xFF00E5FF))
