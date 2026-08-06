@@ -19,26 +19,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
-import kotlin.math.abs
 
+/**
+ * Shared static look of a pedal (label + rounded track + fill + value).
+ * Used by BOTH the game screen (inside PedalView) and the HUD editor so the
+ * pedals render identical in shape, size and curve.
+ */
 @Composable
-fun PedalView(
+fun PedalShape(
     label: String,
     color: Color,
     value: Float,
-    onValueChange: (Float) -> Unit,
-    onRelease: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    pressed: Boolean = false,
+    trackModifier: Modifier = Modifier
 ) {
     val displayValue = remember { mutableStateOf(0f) }
-    val isPressed = remember { mutableStateOf(false) }
-    
     LaunchedEffect(value) {
-        // Instant response without interpolation lag
         displayValue.value = value
     }
-    
+    val fill = displayValue.value.coerceIn(0f, 1f)
+
     Column(
         modifier = modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -48,60 +49,39 @@ fun PedalView(
             text = label,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isPressed.value) color else Color(0xFF555555),
+            color = if (pressed) color else Color(0xFF555555),
             textAlign = TextAlign.Center,
             letterSpacing = 1.sp
         )
-        
+
         Spacer(Modifier.height(4.dp))
-        
+
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.72f)
                 .fillMaxHeight(0.78f)
                 .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xFF12122A))
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        down.consume()
-                        isPressed.value = true
-                        val relY = 1f - (down.position.y / size.height).coerceIn(0f, 1f)
-                        onValueChange(relY)
-
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.first()
-                            if (!change.pressed) break
-                            change.consume()
-                            val newY = 1f - (change.position.y / size.height).coerceIn(0f, 1f)
-                            onValueChange(newY)
-                        }
-
-                        isPressed.value = false
-                        onRelease()
-                    }
-                },
+                .then(trackModifier),
             contentAlignment = Alignment.BottomCenter
         ) {
-            val fillHeight = displayValue.value.coerceIn(0f, 1f)
-            if (fillHeight > 0.01f) {
+            if (fill > 0.01f) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight(fillHeight)
+                        .fillMaxHeight(fill)
                         .clip(RoundedCornerShape(18.dp))
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
-                                    color.copy(alpha = if (isPressed.value) 0.5f else 0.25f),
-                                    if (isPressed.value) color else color.copy(alpha = 0.7f)
+                                    color.copy(alpha = if (pressed) 0.5f else 0.25f),
+                                    if (pressed) color else color.copy(alpha = 0.7f)
                                 )
                             )
                         )
                 )
             }
-            
+
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val lineSpacingPx = 12f
                 val lineCount = (size.height / lineSpacingPx).toInt()
@@ -115,18 +95,59 @@ fun PedalView(
                     )
                 }
             }
-            
+
             Text(
-                text = "${(displayValue.value * 100).toInt()}",
+                text = "${(fill * 100).toInt()}",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (displayValue.value > 0.01f) Color.White else Color(0xFF444444),
+                color = if (fill > 0.01f) Color.White else Color(0xFF444444),
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(bottom = 20.dp)
             )
         }
     }
+}
+
+@Composable
+fun PedalView(
+    label: String,
+    color: Color,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onRelease: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isPressed = remember { mutableStateOf(false) }
+
+    PedalShape(
+        label = label,
+        color = color,
+        value = value,
+        modifier = modifier,
+        pressed = isPressed.value,
+        trackModifier = Modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                down.consume()
+                isPressed.value = true
+                val relY = 1f - (down.position.y / size.height).coerceIn(0f, 1f)
+                onValueChange(relY)
+
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.first()
+                    if (!change.pressed) break
+                    change.consume()
+                    val newY = 1f - (change.position.y / size.height).coerceIn(0f, 1f)
+                    onValueChange(newY)
+                }
+
+                isPressed.value = false
+                onRelease()
+            }
+        }
+    )
 }
 
 /**
