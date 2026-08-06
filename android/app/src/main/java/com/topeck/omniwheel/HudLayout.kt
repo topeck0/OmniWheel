@@ -13,7 +13,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.math.minOf
 
 /**
  * A single HUD element. Positions and sizes are stored as fractions (0..1)
