@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.topeck.omniwheel.network.DiscoveryClient
@@ -219,21 +220,10 @@ fun OmniWheelTheme(content: @Composable () -> Unit) {
 }
 
 /**
- * Controller screen layout matching reference:
- *
- * LEFT SIDE:
- *   Top: Buttons 5, 6, 7, 18 (row)
- *   Below: Button 4 (left of wheel), Button 8 (right of wheel, below 18)
- *   Center: Steering wheel
- *   Bottom-left: Button 14
- *
- * RIGHT SIDE:
- *   Top: Buttons 1, 3, 2 (large row)
- *   Middle: Buttons 10, 15, 9
- *   Bottom: Buttons 11, 12, 13 (13 wide), Button 17
- *
- * FAR RIGHT:
- *   Two vertical sliders (Brake, Gas, optional Clutch)
+ * Controller screen. Widget positions/sizes come from the shared HUD layout
+ * (see HudLayout.kt / defaultControllerLayout) so the game screen and the
+ * HUD editor always render identical positions. Editing in the HUD editor
+ * persists via SettingsManager.saveHudLayout and is reloaded here.
  */
 @Composable
 fun ControllerScreen(
@@ -249,6 +239,8 @@ fun ControllerScreen(
     var clutch by remember { mutableStateOf(0f) }
     val activeButtons = remember { mutableStateOf(setOf<Int>()) }
     val btnMap = remember { allButtons() }
+    val hudLayout = remember { settings.loadHudLayout() }
+    val density = LocalDensity.current
     var lastPacketCount by remember { mutableIntStateOf(0) }
     var gyroEnabled by remember { mutableStateOf(settings.gyroEnabled) }
     var backPressedOnce by remember { mutableStateOf(false) }
@@ -328,140 +320,85 @@ fun ControllerScreen(
                 packetCount = if (settings.showPacketCounter) lastPacketCount else -1,
             )
 
-            // Main content: left (wheel+buttons) | center (buttons) | right (pedals)
-            Row(
+            // Main content rendered from the shared HUD layout (same as HUD editor)
+            BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                // ===== LEFT SIDE: wheel area with surrounding buttons =====
-                Box(
-                    modifier = Modifier
-                        .weight(0.42f)
-                        .fillMaxHeight()
-                ) {
-                    // Top row: 5, 6, 7, 18
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .align(Alignment.TopCenter)
-                            .padding(horizontal = 2.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        VButtonView(btnMap[5]!!, isActive(btnMap[5]!!.action), onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[6]!!, isActive(btnMap[6]!!.action), onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[7]!!, isActive(btnMap[7]!!.action), onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[18]!!, isActive(btnMap[18]!!.action), onBtn, 42, settings.hapticFeedback)
-                    }
+                val aw = maxWidth
+                val ah = maxHeight
+                val awPx = with(density) { aw.toPx() }
+                val ahPx = with(density) { ah.toPx() }
 
-                    // Button 4 (lower-left of top row)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .padding(start = 2.dp, top = 30.dp)
-                    ) {
-                        VButtonView(btnMap[4]!!, isActive(btnMap[4]!!.action), onBtn, 38, settings.hapticFeedback)
-                    }
+                hudLayout.forEach { widget ->
+                    when {
+                        widget.isSteering -> HudSlot(widget, aw, ah) {
+                            SteeringWheelView(
+                                viewModel = steeringViewModel,
+                                isGyroActive = gyroEnabled && gyroManager.isEnabled,
+                                showAngleText = settings.showAngleText,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
 
-                    // Button 8 (below button 18)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(end = 2.dp, top = 34.dp)
-                    ) {
-                        VButtonView(btnMap[8]!!, isActive(btnMap[8]!!.action), onBtn, 42, settings.hapticFeedback)
-                    }
+                        widget.isPedal -> {
+                            if (widget.id == "clutch" && !settings.clutchEnabled) return@forEach
+                            HudSlot(widget, aw, ah) {
+                                when (widget.id) {
+                                    "gas" -> PedalView(
+                                        "GAS", Color(0xFF22C55E), throttle,
+                                        onValueChange = { throttle = it },
+                                        onRelease = { if (settings.pedalReturnOnRelease) throttle = 0f },
+                                        modifier = Modifier.fillMaxSize()
+                                    )
 
-                    // Steering wheel (center)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(top = 20.dp, bottom = 10.dp)
-                            .fillMaxWidth(0.95f)
-                            .fillMaxHeight(0.7f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        SteeringWheelView(
-                            viewModel = steeringViewModel,
-                            isGyroActive = gyroEnabled && gyroManager.isEnabled,
-                            showAngleText = settings.showAngleText,
-                        )
-                    }
+                                    "brake" -> PedalView(
+                                        "BRAKE", Color(0xFFEF4444), brake,
+                                        onValueChange = { brake = it },
+                                        onRelease = { brake = 0f },
+                                        modifier = Modifier.fillMaxSize()
+                                    )
 
-                    // Button 14 (bottom-left)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = 2.dp, bottom = 4.dp)
-                    ) {
-                        VButtonView(btnMap[14]!!, isActive(btnMap[14]!!.action), onBtn, 38, settings.hapticFeedback)
+                                    "clutch" -> PedalView(
+                                        "CLUTCH", Color(0xFFF59E0B), clutch,
+                                        onValueChange = { clutch = it },
+                                        onRelease = { clutch = 0f },
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                        }
+
+                        else -> HudSlot(widget, aw, ah) {
+                            val action = widget.vJoyBtn
+                            val b = btnMap[action] ?: VButton(action, widget.label, action = action)
+                            val active = isActive(action)
+                            val wdp = with(density) { (awPx * widget.wFrac).toDp().value.toInt() }
+                            val hdp = with(density) { (ahPx * widget.hFrac).toDp().value.toInt() }
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (widget.wFrac > widget.hFrac) {
+                                    WideButtonView(
+                                        button = b,
+                                        isActive = active,
+                                        onPressed = onBtn,
+                                        widthDp = wdp,
+                                        heightDp = hdp,
+                                        hapticEnabled = settings.hapticFeedback
+                                    )
+                                } else {
+                                    VButtonView(
+                                        button = b,
+                                        isActive = active,
+                                        onPressed = onBtn,
+                                        size = minOf(wdp, hdp),
+                                        hapticEnabled = settings.hapticFeedback
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-
-                // ===== CENTER-RIGHT: button grid =====
-                Column(
-                    modifier = Modifier
-                        .weight(0.38f)
-                        .fillMaxHeight()
-                        .padding(horizontal = 2.dp, vertical = 2.dp),
-                    verticalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    // Top row: 1, 3, 2 (larger buttons)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        VButtonView(btnMap[1]!!, isActive(btnMap[1]!!.action), onBtn, 44, settings.hapticFeedback)
-                        VButtonView(btnMap[3]!!, isActive(btnMap[3]!!.action), onBtn, 44, settings.hapticFeedback)
-                        VButtonView(btnMap[2]!!, isActive(btnMap[2]!!.action), onBtn, 44, settings.hapticFeedback)
-                    }
-
-                    // Middle row: 10, 15, 9
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        VButtonView(btnMap[10]!!, isActive(btnMap[10]!!.action), onBtn, 40, settings.hapticFeedback)
-                        VButtonView(btnMap[15]!!, isActive(btnMap[15]!!.action), onBtn, 40, settings.hapticFeedback)
-                        VButtonView(btnMap[9]!!, isActive(btnMap[9]!!.action), onBtn, 40, settings.hapticFeedback)
-                    }
-
-                    // Bottom area: 11, 12 side by side, 13 wide below, 17 to the right
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        VButtonView(btnMap[11]!!, isActive(btnMap[11]!!.action), onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[12]!!, isActive(btnMap[12]!!.action), onBtn, 38, settings.hapticFeedback)
-                        VButtonView(btnMap[17]!!, isActive(btnMap[17]!!.action), onBtn, 38, settings.hapticFeedback)
-                    }
-                    // Button 13 (wide, centered below 11+12)
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        WideButtonView(btnMap[13]!!, isActive(btnMap[13]!!.action), onBtn, widthDp = 140, heightDp = 34, hapticEnabled = settings.hapticFeedback)
-                    }
-                }
-
-                // ===== FAR RIGHT: vertical pedal sliders =====
-                VerticalPedalsColumn(
-                    throttle = throttle,
-                    brake = brake,
-                    clutch = clutch,
-                    clutchEnabled = settings.clutchEnabled,
-                    onThrottleChange = { throttle = it },
-                    onBrakeChange = { brake = it },
-                    onClutchChange = { clutch = it },
-                    onThrottleRelease = { if (settings.pedalReturnOnRelease) throttle = 0f },
-                    onBrakeRelease = { brake = 0f },
-                    onClutchRelease = { clutch = 0f },
-                    pedalWidthDp = settings.pedalWidth
-                )
             }
         }
 

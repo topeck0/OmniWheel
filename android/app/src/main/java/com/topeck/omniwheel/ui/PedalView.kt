@@ -40,9 +40,7 @@ fun PedalView(
     }
     
     Column(
-        modifier = modifier
-            .fillMaxHeight(0.88f)
-            .width(68.dp),
+        modifier = modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom
     ) {
