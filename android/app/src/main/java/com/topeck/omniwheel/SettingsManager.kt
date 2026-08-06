@@ -138,7 +138,46 @@ class SettingsManager(context: Context) {
 
     fun loadHudLayout(): List<HudWidget> {
         val json = prefs.getString("hud_layout", "") ?: ""
-        return widgetListFromJson(json) ?: defaultControllerLayout()
+        return widgetListFromJson(json) ?: loadDefaultHudLayout()
+    }
+
+    // === DEVELOPER: DEFAULT LAYOUT ===
+    // The stored default layout is used on first launch / after a reset,
+    // exactly like the built-in defaultControllerLayout() fallback.
+    var defaultHudLayoutJson: String?
+        get() = prefs.getString("default_hud_layout", null)
+        set(v) {
+            val e = prefs.edit()
+            if (v == null) e.remove("default_hud_layout") else e.putString("default_hud_layout", v)
+            e.apply()
+        }
+
+    fun loadDefaultHudLayout(): List<HudWidget> {
+        val j = prefs.getString("default_hud_layout", "")
+        return widgetListFromJson(j ?: "") ?: defaultControllerLayout()
+    }
+
+    fun saveCurrentAsDefaultLayout() {
+        val json = prefs.getString("hud_layout", "")
+        if (!json.isNullOrBlank()) {
+            prefs.edit().putString("default_hud_layout", json).apply()
+        }
+    }
+
+    // Write the current layout JSON to a file the developer can grab.
+    fun exportLayoutJson(context: Context): String? {
+        var json = prefs.getString("hud_layout", "").orEmpty()
+        if (json.isBlank()) json = prefs.getString("default_hud_layout", "").orEmpty()
+        if (json.isBlank()) return null
+        return try {
+            val dir = context.getExternalFilesDir(null)
+                ?: context.filesDir
+            val file = java.io.File(dir, "omniwheel_hud_layout.json")
+            file.writeText(json)
+            file.absolutePath
+        } catch (e: Exception) {
+            null
+        }
     }
     
     fun resetToDefaults() {

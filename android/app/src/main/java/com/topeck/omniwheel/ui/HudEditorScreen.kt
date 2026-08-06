@@ -32,6 +32,10 @@ import com.topeck.omniwheel.HUD_REF_H
 import com.topeck.omniwheel.HUD_REF_W
 import com.topeck.omniwheel.HudSlot
 import com.topeck.omniwheel.HudWidget
+import com.topeck.omniwheel.PEDAL_H_MAX_DP
+import com.topeck.omniwheel.PEDAL_H_MIN_DP
+import com.topeck.omniwheel.PEDAL_W_MAX_DP
+import com.topeck.omniwheel.PEDAL_W_MIN_DP
 import com.topeck.omniwheel.R
 import com.topeck.omniwheel.SettingsManager
 import com.topeck.omniwheel.resetToTypeDefaults
@@ -136,9 +140,13 @@ fun HudEditorScreen(
                                             val cur = widgets.getOrNull(idx)
                                             if (cur != null) {
                                                 // Move 1:1 with the finger, independent of scale.
+                                                // Pointer dragAmount is reported in the widget's
+                                                // transformed (scaled) local space, so multiply by
+                                                // scale to convert back to real play-area pixels.
+                                                val s = cur.scale
                                                 widgets[idx] = cur.copy(
-                                                    cx = (cur.cx + dragAmount.x / awPx).coerceIn(0f, 1f),
-                                                    cy = (cur.cy + dragAmount.y / ahPx).coerceIn(0f, 1f)
+                                                    cx = (cur.cx + dragAmount.x * s / awPx).coerceIn(0f, 1f),
+                                                    cy = (cur.cy + dragAmount.y * s / ahPx).coerceIn(0f, 1f)
                                                 )
                                                 hasChanges = true
                                             }
@@ -392,10 +400,12 @@ fun HudEditorScreen(
                     }
 
                     // Width & height hidden for steering wheels (circular, scale only).
-                    // Pedals use a wide width range: 300dp .. 1000dp.
+                    // Pedals use: width 70..500dp, height 200..700dp.
                     if (!widget.isSteering) {
-                        val wMin = if (widget.isPedal) 300f / HUD_REF_W else 0.02f
-                        val wMax = if (widget.isPedal) 1000f / HUD_REF_W else 0.5f
+                        val wMin = if (widget.isPedal) PEDAL_W_MIN_DP / HUD_REF_W else 0.02f
+                        val wMax = if (widget.isPedal) PEDAL_W_MAX_DP / HUD_REF_W else 0.5f
+                        val hMin = if (widget.isPedal) PEDAL_H_MIN_DP / HUD_REF_H else 0.02f
+                        val hMax = if (widget.isPedal) PEDAL_H_MAX_DP / HUD_REF_H else 0.9f
                         Text("Width: ${(widget.wFrac * HUD_REF_W).toInt()}dp", fontSize = 11.sp, color = Color.Gray)
                         Slider(
                             value = widget.wFrac.coerceIn(wMin, wMax),
@@ -412,7 +422,7 @@ fun HudEditorScreen(
 
                         Text("Height: ${(widget.hFrac * HUD_REF_H).toInt()}dp", fontSize = 11.sp, color = Color.Gray)
                         Slider(
-                            value = widget.hFrac.coerceIn(0.02f, 0.9f),
+                            value = widget.hFrac.coerceIn(hMin, hMax),
                             onValueChange = { nh ->
                                 if (idx >= 0) {
                                     val updated = widget.copy(hFrac = nh)
@@ -421,7 +431,7 @@ fun HudEditorScreen(
                                     hasChanges = true
                                 }
                             },
-                            valueRange = 0.02f..0.9f
+                            valueRange = hMin..hMax
                         )
                     }
 

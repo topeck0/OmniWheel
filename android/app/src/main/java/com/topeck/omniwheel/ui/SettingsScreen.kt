@@ -18,12 +18,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.topeck.omniwheel.R
 import com.topeck.omniwheel.SettingsManager
+import com.topeck.omniwheel.widgetListToJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -39,6 +41,7 @@ fun SettingsScreen(
     var expandedSection by remember { mutableStateOf<String?>(null) }
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
+    var exportedPath by remember { mutableStateOf<String?>(null) }
 
     BackHandler {
         onBack()
@@ -316,7 +319,7 @@ fun SettingsScreen(
                 )
             }
             
-            // SYSTEM LOGS SECTION
+// SYSTEM LOGS SECTION
             SettingsSection(
                 title = "System Logs",
                 icon = "LG",
@@ -331,6 +334,53 @@ fun SettingsScreen(
                     description = "Open full screen system logs viewer with copy support",
                     color = Color(0xFF3B82F6),
                     onClick = { onOpenLogs() }
+                )
+            }
+
+            // DEVELOPER SECTION
+            SettingsSection(
+                title = "Developer",
+                icon = "DV",
+                color = Color(0xFF14B8A6),
+                isExpanded = expandedSection == "developer",
+                onToggle = { expandedSection = if (expandedSection == "developer") null else "developer" },
+                scrollState = scrollState,
+                coroutineScope = coroutineScope
+            ) {
+                SettingsAction(
+                    label = "Save Current Layout as Default",
+                    description = "The current saved HUD layout becomes the default used on reset / first install",
+                    color = Color(0xFF14B8A6),
+                    onClick = { settings.saveCurrentAsDefaultLayout() }
+                )
+                SettingsAction(
+                    label = "Export Layout (JSON)",
+                    description = "Share the layout JSON with full details: positions, sizes, scale, vJoy mapping",
+                    color = Color(0xFF14B8A6),
+                    onClick = {
+                        val ctx = LocalContext.current
+                        settings.saveCurrentAsDefaultLayout()
+                        settings.exportLayoutJson(ctx)?.let { path ->
+                            exportedPath = path
+                            val sendIntent = android.content.Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_SUBJECT, "OmniWheel HUD Layout")
+                                putExtra(Intent.EXTRA_TEXT, settings.loadHudLayout().let { widgetListToJson(it) })
+                            }
+                            ctx.startActivity(Intent.createChooser(sendIntent, "Share HUD Layout"))
+                        } ?: run { exportedPath = "Export failed" }
+                    }
+                )
+                Text(
+                    text = exportedPath ?: "",
+                    fontSize = 9.sp,
+                    color = Color(0xFF12B312)
+                )
+                SettingsAction(
+                    label = "Reset Default Layout",
+                    description = "Revert the stored default back to the built-in defaultControllerLayout()",
+                    color = Color(0xFFEF4444),
+                    onClick = { settings.defaultHudLayoutJson = null }
                 )
             }
             
