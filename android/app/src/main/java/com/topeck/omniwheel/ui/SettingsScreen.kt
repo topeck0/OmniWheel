@@ -79,7 +79,7 @@ fun SettingsScreen(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                text = "v0.8.4-alpha",
+                text = "v0.9",
                 fontSize = 10.sp,
                 color = Color(0xFF444444)
             )
