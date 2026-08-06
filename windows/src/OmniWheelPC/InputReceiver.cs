@@ -134,7 +134,7 @@ public class InputReceiver : IDisposable
                     var ack = Protocol.BuildPacket(Protocol.PacketType.HeartbeatAck, hdr.Sequence);
                     await _udp.SendAsync(ack, ack.Length, result.RemoteEndPoint);
                 }
-                else if (hdr.Type == Protocol.PacketType.Meta && hdr.PayloadLength >= 11)
+                else if (hdr.Type == Protocol.PacketType.Meta && hdr.PayloadLength >= 12)
                 {
                     ParseMeta(data, hdr.HeaderSize, hdr.PayloadLength);
                     OnMetaReceived?.Invoke();
@@ -198,12 +198,13 @@ public class InputReceiver : IDisposable
     }
 
     /// <summary>
-    /// Parse metadata payload (battery, steering range, screen size, device name).
+    /// Parse metadata payload (battery, steering range, screen size, flags, device name).
     ///   [0] battery % (0-100, 255 = unknown)
     ///   [1-2] steering max angle uint16 LE
     ///   [3-6] screen width px uint32 LE
     ///   [7-10] screen height px uint32 LE
-    ///   [11+] device type name UTF8 (optional)
+    ///   [11] flags (bit0 = clutch enabled)
+    ///   [12+] device type name UTF8 (optional)
     /// </summary>
     private void ParseMeta(byte[] data, int offset, int payloadLen)
     {
@@ -214,14 +215,16 @@ public class InputReceiver : IDisposable
                       ((uint)data[off + 5] << 16) | ((uint)data[off + 6] << 24));
         int h = (int)((uint)data[off + 7] | ((uint)data[off + 8] << 8) |
                       ((uint)data[off + 9] << 16) | ((uint)data[off + 10] << 24));
+        int flags = data[off + 11];
 
         CurrentState.PhoneBatteryPercent = battery;
         CurrentState.PhoneMaxAngle = maxAngle;
         CurrentState.PhoneScreenWidthPx = w;
         CurrentState.PhoneScreenHeightPx = h;
+        CurrentState.ClutchEnabled = (flags & 0x01) != 0;
 
-        if (payloadLen > 11)
-            CurrentState.PhoneDeviceName = Encoding.UTF8.GetString(data, off + 11, payloadLen - 11).Trim();
+        if (payloadLen > 12)
+            CurrentState.PhoneDeviceName = Encoding.UTF8.GetString(data, off + 12, payloadLen - 12).Trim();
     }
 
     /// <summary>
@@ -276,6 +279,7 @@ public class InputState
     public int PhoneScreenWidthPx { get; set; }
     public int PhoneScreenHeightPx { get; set; }
     public string PhoneDeviceName { get; set; } = "";
+    public bool ClutchEnabled { get; set; } = true;
 
     public DateTime Timestamp { get; set; }
 
