@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
@@ -251,36 +252,47 @@ fun ControllerScreen(
     val context = LocalContext.current
 
     // Push our device metadata + layout to the PC so the preview is a live copy.
-    // The layout is re-sent rapidly right after connecting (survives dropped
-    // UDP packets / slow routers), then refreshed periodically. Only widgets
-    // that actually changed are transmitted each cycle.
+    // The authoritative full layout (chunked) is re-sent on EVERY fast cycle
+    // right after connecting, and periodically afterwards, so the PC always
+    // completes its reassembly even when individual UDP chunks get dropped on
+    // WiFi (a single lost chunk would otherwise leave the PC on the default
+    // layout forever). Only widgets that changed are additionally streamed.
     LaunchedEffect(Unit) {
         val startMs = System.currentTimeMillis()
         while (true) {
-            val bbm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-            val cap = bbm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            if (cap != null && cap in 0..100) {
-                inputSender.metaBatteryPercent = cap
+            val loopStart = System.currentTimeMillis()
+            try {
+                val bbm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+                val cap = bbm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                if (cap != null && cap in 0..100) {
+                    inputSender.metaBatteryPercent = cap
+                }
+                inputSender.metaMaxAngle = settings.steeringMaxAngle
+                inputSender.metaDeviceType = Build.MODEL.ifBlank { "Android Phone" }
+                inputSender.metaClutchEnabled = settings.clutchEnabled
+                inputSender.sendMetaPacket()
+
+                // Never transmit the clutch widget when it is disabled.
+                val sendList = if (settings.clutchEnabled) hudLayout
+                    else hudLayout.filterNot { it.id == "clutch" }
+                val fullJson = widgetListToJson(sendList)
+                val sendJsons = sendList.map { it.toJson().toString() }
+
+                // Authoritative full layout: fast cadence while the connection
+                // is young so any dropped chunk is repaired by the next burst.
+                inputSender.sendFullLayout(fullJson)
+                inputSender.syncLayout(sendJsons)
+
+                val elapsed = System.currentTimeMillis() - startMs
+                val delayMs = if (elapsed < 3000) 400L else 30_000L
+                val spent = System.currentTimeMillis() - loopStart
+                delay((delayMs - spent).coerceAtLeast(50L))
+            } catch (t: Throwable) {
+                // A single bad iteration must never kill the sync loop.
+                inputSender.onLog?.invoke("Sync loop error: ${t.message}")
+                Log.e("OmniWheel", "Layout sync loop", t)
+                delay(1000L)
             }
-            inputSender.metaMaxAngle = settings.steeringMaxAngle
-            inputSender.metaDeviceType = Build.MODEL.ifBlank { "Android Phone" }
-            inputSender.metaClutchEnabled = settings.clutchEnabled
-            inputSender.sendMetaPacket()
-
-            // Never transmit the clutch widget when it is disabled.
-            val sendList = if (settings.clutchEnabled) hudLayout
-                else hudLayout.filterNot { it.id == "clutch" }
-            val sendJsons = sendList.map { it.toJson().toString() }
-
-            // First pass: send the authoritative full layout (chunked) so the
-            // PC preview is an exact copy even if individual packets get lost.
-            if (System.currentTimeMillis() - startMs < 700) {
-                inputSender.sendFullLayout(widgetListToJson(sendList))
-            }
-            inputSender.syncLayout(sendJsons)
-
-            val elapsed = System.currentTimeMillis() - startMs
-            delay(if (elapsed < 3000) 600L else 30_000L)
         }
     }
 

@@ -88,15 +88,18 @@ fun defaultControllerLayout(): List<HudWidget> = listOf(
     HudWidget("btn_16", "13", 0.0157f, 0.7715f, 0.0781f, 0.1556f, 13)
 )
 
+/** Coerce NaN/Infinity to 0 so org.json never throws on a widget value. */
+private fun Float.safeJsonValue(): Float = if (isFinite()) this else 0f
+
 fun HudWidget.toJson(): JSONObject = JSONObject().apply {
     put("id", id)
     put("label", label)
-    put("cx", cx.toDouble())
-    put("cy", cy.toDouble())
-    put("wFrac", wFrac.toDouble())
-    put("hFrac", hFrac.toDouble())
+    put("cx", cx.safeJsonValue().toDouble())
+    put("cy", cy.safeJsonValue().toDouble())
+    put("wFrac", wFrac.safeJsonValue().toDouble())
+    put("hFrac", hFrac.safeJsonValue().toDouble())
     put("vJoyBtn", vJoyBtn)
-    put("scale", scale.toDouble())
+    put("scale", scale.safeJsonValue().toDouble())
     put("circular", isCircular)
     put("steering", isSteering)
     put("pedal", isPedal)

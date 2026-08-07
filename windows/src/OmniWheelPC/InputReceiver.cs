@@ -45,7 +45,6 @@ public class InputReceiver : IDisposable
     public string? ConnectedDeviceIp => _lastRemote?.Address.ToString();
 
     // Reusable receive buffer
-    private byte[]? _recvBuf;
     private readonly Dictionary<string, ChunkState> _chunkStates = new();
 
     public void Start()
@@ -59,8 +58,6 @@ public class InputReceiver : IDisposable
         _udp.Client.DontFragment = true;
         _udp.Client.Ttl = 255;
         _udp.EnableBroadcast = true;
-        
-        _recvBuf = new byte[512];
 
         _ = WatchdogAsync(_cts.Token);
         _task = Task.Run(RunAsync, _cts.Token);
@@ -171,6 +168,7 @@ public class InputReceiver : IDisposable
                                 ReceivedParts = new bool[total]
                             };
                             _chunkStates[key] = st;
+                            OnLog?.Invoke($"HUD_FULL burst start ({total} chunks)");
                         }
                         if (st.ReceivedParts[part]) continue; // duplicate chunk
                         int dataLen = hdr.PayloadLength - 2;
@@ -191,6 +189,7 @@ public class InputReceiver : IDisposable
                             }
                             var json = Encoding.UTF8.GetString(exactBuf);
                             _chunkStates.Remove(key);
+                            OnLog?.Invoke($"HUD_FULL complete ({total} chunks, {totalLen} bytes, {json.Length} chars)");
                             OnWidgetReceived?.Invoke("FULL:" + json);
                         }
                     }
