@@ -145,6 +145,8 @@ public class HudPreviewControl : Control
                 string.Equals(w.Id, "clutch", StringComparison.OrdinalIgnoreCase))
                 continue;
 
+            // Base size from fractions, then apply the widget's scale factor the
+            // exact same way the phone does (graphicsLayer scales around center).
             int wF = (int)(area.Width * w.WFrac);
             int hF = (int)(area.Height * w.HFrac);
 
@@ -155,10 +157,14 @@ public class HudPreviewControl : Control
                 hF = m;
             }
 
-            int xPx = (int)(area.X + area.Width * w.Cx - wF / 2f);
-            int yPx = (int)(area.Y + area.Height * w.Cy - hF / 2f);
+            float sc = w.Scale > 0f ? w.Scale : 1f;
+            int wS = Math.Max(1, (int)(wF * sc));
+            int hS = Math.Max(1, (int)(hF * sc));
 
-            var rect = new Rectangle(xPx, yPx, wF, hF);
+            int xPx = (int)(area.X + area.Width * w.Cx - wS / 2f);
+            int yPx = (int)(area.Y + area.Height * w.Cy - hS / 2f);
+
+            var rect = new Rectangle(xPx, yPx, wS, hS);
 
             if (w.IsSteering)
                 DrawSteeringWheel(g, rect);

@@ -250,10 +250,12 @@ fun ControllerScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Push our device metadata to the PC so the preview card shows the real
-    // battery level, steering range and device name. Refreshes periodically
-    // so battery changes propagate live.
+    // Push our device metadata + layout to the PC so the preview is a live copy.
+    // The layout is re-sent rapidly right after connecting (survives dropped
+    // UDP packets / slow routers), then refreshed periodically. Only widgets
+    // that actually changed are transmitted each cycle.
     LaunchedEffect(Unit) {
+        val startMs = System.currentTimeMillis()
         while (true) {
             val bbm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
             val cap = bbm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
@@ -264,8 +266,14 @@ fun ControllerScreen(
             inputSender.metaDeviceType = Build.MODEL.ifBlank { "Android Phone" }
             inputSender.metaClutchEnabled = settings.clutchEnabled
             inputSender.sendMetaPacket()
-            inputSender.syncLayout(hudLayout.map { it.toJson().toString() })
-            delay(30_000)
+
+            // Never transmit the clutch widget when it is disabled.
+            val sendList = if (settings.clutchEnabled) hudLayout
+                else hudLayout.filterNot { it.id == "clutch" }
+            inputSender.syncLayout(sendList.map { it.toJson().toString() })
+
+            val elapsed = System.currentTimeMillis() - startMs
+            delay(if (elapsed < 3000) 600L else 30_000L)
         }
     }
 

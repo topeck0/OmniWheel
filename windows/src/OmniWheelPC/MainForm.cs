@@ -15,6 +15,10 @@ public class MainForm : Form
     private const int WM_NCLBUTTONDOWN = 0xA1;
     private const int HT_CAPTION = 0x2;
     private const int WM_GETMINMAXINFO = 0x24;
+    private const int WM_NCHITTEST = 0x84;
+    private const int HTCLIENT = 0x1;
+    private const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13;
+    private const int HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
 
     [DllImport("user32.dll")]
     private static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
@@ -155,7 +159,7 @@ public class MainForm : Form
             _input.Start();
             _uiTimer.Start();
             _vJoyTimer.Start();
-            Log("OmniWheel PC v0.9 started");
+            Log("OmniWheel PC v0.9.1 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
@@ -593,7 +597,8 @@ public class MainForm : Form
 
     /// <summary>
     /// Keep maximized frameless window within the monitor's working area so it
-    /// respects the taskbar instead of covering the whole screen.
+    /// respects the taskbar instead of covering the whole screen, and make the
+    /// frameless window resizable by dragging its edges/corners.
     /// </summary>
     protected override void WndProc(ref Message m)
     {
@@ -611,6 +616,32 @@ public class MainForm : Form
             m.Result = IntPtr.Zero;
             return;
         }
+
+        if (m.Msg == WM_NCHITTEST)
+        {
+            base.WndProc(ref m);
+            int ht = m.Result.ToInt32();
+            if (ht != HTCLIENT && ht != HT_CAPTION && ht != 0x0) { return; }
+
+            int lp = m.LParam.ToInt32();
+            int sx = (short)(lp & 0xFFFF);
+            int sy = (short)((lp >> 16) & 0xFFFF);
+            var pt = PointToClient(new Point(sx, sy));
+
+            const int edge = 8; // resize grip in px
+            int x = pt.X, y = pt.Y, w = Width, h = Height;
+            bool top = y <= edge, bottom = y >= h - edge;
+            bool left = x <= edge, right = x >= w - edge;
+
+            int hc = (top && left) ? HTTOPLEFT : (top && right) ? HTTOPRIGHT
+                : (bottom && left) ? HTBOTTOMLEFT : (bottom && right) ? HTBOTTOMRIGHT
+                : top ? HTTOP : bottom ? HTBOTTOM
+                : left ? HTLEFT : right ? HTRIGHT : HTCLIENT;
+
+            m.Result = (IntPtr)hc;
+            return;
+        }
+
         base.WndProc(ref m);
     }
 
@@ -686,6 +717,7 @@ public class MainForm : Form
         _lblBattery.Text = "Battery: --";
     }
 
+    private bool _metaLogged;
     private void OnMetaReceived()
     {
         if (InvokeRequired) { BeginInvoke(OnMetaReceived); return; }
@@ -701,6 +733,12 @@ public class MainForm : Form
         _hudPreview.SteeringMaxAngle = s.PhoneMaxAngle;
         _hudPreview.InputState = s;
         _hudPreview.Invalidate();
+
+        if (!_metaLogged)
+        {
+            _metaLogged = true;
+            Log($"Synced from phone: {name} | battery {s.PhoneBatteryPercent}% | steering {s.PhoneMaxAngle}° | clutch {(s.ClutchEnabled ? "ON" : "OFF")} | {s.PhoneScreenWidthPx}x{s.PhoneScreenHeightPx}px");
+        }
     }
 
     private void OnWidgetReceived(string json)
