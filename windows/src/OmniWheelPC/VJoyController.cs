@@ -199,8 +199,8 @@ public class VJoyController : IDisposable
         }
         else { _skippedCalls++; }
 
-        // Clutch (inverted)
-        long clutchAxis = AXIS_MAX - (long)((state.Clutch / 255.0) * AXIS_MAX);
+        // Clutch (0% at rest, 100% fully pressed — matches the preview display)
+        long clutchAxis = (long)((state.Clutch / 255.0) * AXIS_MAX);
         if (clutchAxis != _prevClutch)
         {
             SetAxis(clutchAxis, VJD_ID, HID_USAGES.HID_USAGE_RX);

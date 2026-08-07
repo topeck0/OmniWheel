@@ -36,6 +36,8 @@ public class InputReceiver : IDisposable
     public event Action<string>? OnWidgetReceived;
 
     private IPEndPoint? _lastRemote;
+    private IPEndPoint? _lockedEndPoint;
+    private string? _ignoredOtherLogged;
     private DateTime _lastInputTime;
     private const int TimeoutMs = 8000;
 
@@ -81,6 +83,8 @@ public class InputReceiver : IDisposable
                 OnDisconnected?.Invoke();
                 OnLog?.Invoke("Device disconnected (timeout)");
                 _lastRemote = null;
+                _lockedEndPoint = null;
+                _ignoredOtherLogged = null;
             }
             wasConnected = connected;
         }
@@ -99,7 +103,27 @@ public class InputReceiver : IDisposable
             {
                 var result = await _udp!.ReceiveAsync(_cts.Token);
                 var data = result.Buffer;
-                _lastRemote = result.RemoteEndPoint as IPEndPoint;
+                var remote = result.RemoteEndPoint as IPEndPoint;
+
+                // Multi-device protection: lock onto the first phone that talks
+                // to us and ignore every other source so two phones can never
+                // fight over the same connection and corrupt each other's input
+                // or layout. The lock clears when the active phone times out.
+                if (_lockedEndPoint == null)
+                {
+                    _lockedEndPoint = remote;
+                }
+                else if (remote != null && !_lockedEndPoint.Address.Equals(remote.Address))
+                {
+                    if (_ignoredOtherLogged != remote.Address.ToString())
+                    {
+                        _ignoredOtherLogged = remote.Address.ToString();
+                        OnLog?.Invoke($"Ignoring packets from {remote.Address} — already connected to {_lockedEndPoint.Address}");
+                    }
+                    continue;
+                }
+
+                _lastRemote = remote;
                 _lastInputTime = DateTime.UtcNow;
                 packetCount++;
 

@@ -29,6 +29,18 @@ public class MainForm : Form
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int cx, int cy);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWCP_ROUND = 2;
+
     [System.Runtime.InteropServices.DllImport("winmm.dll")]
     private static extern uint timeBeginPeriod(uint wPeriod);
 
@@ -111,6 +123,8 @@ public class MainForm : Form
     private bool _cleanedUp;
     private string _currentLayoutJson = "";
     private DateTime _lastRenderedInput = DateTime.MinValue;
+    private bool _syncProgressShown;
+    private bool _dwmRounded;
 
     public MainForm()
     {
@@ -150,17 +164,22 @@ public class MainForm : Form
         _uiTimer.Tick += UpdateUI;
 
         BuildUI();
-        Resize += (_, _) => Relayout();
+        Resize += (_, _) =>
+        {
+            Relayout();
+            if (!_dwmRounded) ApplyRoundedRegion();
+        };
 
         Load += (s, e) =>
         {
             timeBeginPeriod(1); // allow sub-16ms timers for high-refresh preview
+            ApplyRoundedCorners();
             _vJoy.Initialize();
             _discovery.Start();
             _input.Start();
             _uiTimer.Start();
             _vJoyTimer.Start();
-            Log("OmniWheel PC v0.9.7 started");
+            Log("OmniWheel PC v0.9.8 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
@@ -221,7 +240,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.7",
+            Text = "OmniWheel v0.9.8",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -362,7 +381,7 @@ public class MainForm : Form
         {
             Text = "Receiving current layout... [██████████] 100%",
             Font = new Font("Segoe UI", 10f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(56, 189, 248),
+            ForeColor = AccentGlow,
             BackColor = Color.FromArgb(16, 22, 38),
             AutoSize = false,
             TextAlign = ContentAlignment.MiddleCenter,
@@ -609,6 +628,48 @@ public class MainForm : Form
     }
 
     /// <summary>
+    /// Round the window corners so they match the app's soft card edges.
+    /// Windows 11 rounds via DWM; older systems fall back to a rounded region.
+    /// </summary>
+    private void ApplyRoundedCorners()
+    {
+        try
+        {
+            int round = DWMWCP_ROUND;
+            int hr = DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int));
+            if (hr == 0) { _dwmRounded = true; return; }
+        }
+        catch { }
+        _dwmRounded = false;
+        ApplyRoundedRegion();
+    }
+
+    private void ApplyRoundedRegion()
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        int r = Math.Max(8, Math.Min(18, Height / 4));
+        IntPtr region = CreateRoundRectRgn(0, 0, Width + 1, Height + 1, r, r);
+        if (region != IntPtr.Zero)
+        {
+            SetWindowRgn(Handle, region, true);
+        }
+    }
+
+    /// <summary>
+    /// Guarantee the window carries the thick frame style so edge dragging is
+    /// always possible, independent of the visible (zeroed) non-client area.
+    /// </summary>
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.Style |= 0x00040000; // WS_SIZEBOX / WS_THICKFRAME
+            return cp;
+        }
+    }
+
+    /// <summary>
     /// Keep maximized frameless window within the monitor's working area so it
     /// respects the taskbar instead of covering the whole screen, eliminate the
     /// native white caption/border line via WM_NCCALCSIZE, and make the window
@@ -640,26 +701,31 @@ public class MainForm : Form
 
         if (m.Msg == WM_NCHITTEST)
         {
-            base.WndProc(ref m);
-            int ht = m.Result.ToInt32();
-            if (ht != HTCLIENT && ht != HT_CAPTION && ht != 0x0) { return; }
-
+            // Compute the resize grip from the full window rect regardless of
+            // what the default handler reports, so edge/corner dragging always
+            // works even with the zeroed non-client area from WM_NCCALCSIZE.
             int lp = m.LParam.ToInt32();
             int sx = (short)(lp & 0xFFFF);
             int sy = (short)((lp >> 16) & 0xFFFF);
             var pt = PointToClient(new Point(sx, sy));
 
-            const int edge = 8; // resize grip in px
-            int x = pt.X, y = pt.Y, w = Width, h = Height;
-            bool top = y <= edge, bottom = y >= h - edge;
-            bool left = x <= edge, right = x >= w - edge;
+            const int edge = 9; // resize grip in px
+            int w = Width, h = Height;
+            if (pt.X >= -edge && pt.Y >= -edge && pt.X <= w + edge && pt.Y <= h + edge)
+            {
+                bool top = pt.Y <= edge, bottom = pt.Y >= h - edge;
+                bool left = pt.X <= edge, right = pt.X >= w - edge;
 
-            int hc = (top && left) ? HTTOPLEFT : (top && right) ? HTTOPRIGHT
-                : (bottom && left) ? HTBOTTOMLEFT : (bottom && right) ? HTBOTTOMRIGHT
-                : top ? HTTOP : bottom ? HTBOTTOM
-                : left ? HTLEFT : right ? HTRIGHT : HTCLIENT;
+                int hc = (top && left) ? HTTOPLEFT : (top && right) ? HTTOPRIGHT
+                    : (bottom && left) ? HTBOTTOMLEFT : (bottom && right) ? HTBOTTOMRIGHT
+                    : top ? HTTOP : bottom ? HTBOTTOM
+                    : left ? HTLEFT : right ? HTRIGHT : HTCLIENT;
 
-            m.Result = (IntPtr)hc;
+                m.Result = (IntPtr)hc;
+                return;
+            }
+
+            base.WndProc(ref m);
             return;
         }
 
@@ -738,6 +804,7 @@ public class MainForm : Form
         // clutch widget the phone no longer uses).
         _hudPreview.Widgets = new List<HudWidget>();
         _metaLogged = false;
+        _syncProgressShown = false;
         Log("Device connected — clearing preview, waiting for phone layout...");
 
         string devIp = _input.ConnectedDeviceIp ?? "Unknown";
@@ -841,11 +908,15 @@ public class MainForm : Form
     private void ShowSyncProgress()
     {
         if (InvokeRequired) { BeginInvoke(ShowSyncProgress); return; }
+        // Only flash once per connection (the phone re-sends the full layout
+        // several times right after connecting, which used to flicker 5x).
+        if (_syncProgressShown) return;
+        _syncProgressShown = true;
         _lblSyncProgress.Text = "Receiving current layout... [██████████] 100%";
         _lblSyncProgress.Visible = true;
         Task.Run(async () =>
         {
-            await Task.Delay(180);
+            await Task.Delay(1500);
             if (!IsDisposed && _lblSyncProgress.IsHandleCreated)
             {
                 BeginInvoke(() => { _lblSyncProgress.Visible = false; });
