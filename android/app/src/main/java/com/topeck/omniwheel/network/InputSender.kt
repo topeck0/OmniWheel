@@ -512,7 +512,6 @@ class InputSender(private val context: Context) {
             cleanup()
         }
     }
-    }
 
     fun disconnect() {
         if (running && udpSocket != null) {
