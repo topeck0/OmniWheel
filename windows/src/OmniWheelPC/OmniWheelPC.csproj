@@ -6,7 +6,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.9.9</Version>
+    <Version>0.9.10</Version>
     <AssemblyName>OmniWheelPC</AssemblyName>
     <RootNamespace>OmniWheelPC</RootNamespace>
     <SelfContained>false</SelfContained>
