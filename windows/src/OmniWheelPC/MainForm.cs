@@ -160,7 +160,7 @@ public class MainForm : Form
             _input.Start();
             _uiTimer.Start();
             _vJoyTimer.Start();
-            Log("OmniWheel PC v0.9.5 started");
+            Log("OmniWheel PC v0.9.6 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
@@ -221,7 +221,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.5",
+            Text = "OmniWheel v0.9.6",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,

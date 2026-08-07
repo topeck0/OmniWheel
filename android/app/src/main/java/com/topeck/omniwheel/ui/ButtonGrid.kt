@@ -259,6 +259,7 @@ fun ControllerStatusBar(
     gyroActive: Boolean,
     connectedIp: String,
     packetCount: Int,
+    layoutSyncInfo: String,
 ) {
     Row(
         modifier = Modifier
@@ -292,12 +293,20 @@ fun ControllerStatusBar(
         }
         
         Text(
-            text = "v0.8.9-alpha",
+            text = layoutSyncInfo,
             fontSize = 8.sp,
-            color = Color(0xFF333333)
+            color = Color(0xFF22C55E),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "v0.9.6",
+                fontSize = 8.sp,
+                color = Color(0xFF555555)
+            )
+            Spacer(Modifier.width(6.dp))
             if (gyroAvailable) {
                 Text(
                     text = if (gyroActive) "GYRO ON" else "GYRO OFF",
