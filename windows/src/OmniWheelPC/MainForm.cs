@@ -80,6 +80,7 @@ public class MainForm : Form
     // Dashboard View Components
     private Label _previewTitle = null!;
     private HudPreviewControl _hudPreview = null!;
+    private Label _lblSyncProgress = null!;
     private Panel _connectedCard = null!;
     private Panel _logCard = null!;
 
@@ -355,6 +356,19 @@ public class MainForm : Form
             Location = new Point(20, 48),
             Widgets = HudLayoutManager.LoadLayout(_currentLayoutJson)
         };
+
+        // Sync Progress bar overlay label
+        _lblSyncProgress = new Label
+        {
+            Text = "Receiving current layout... [██████████] 100%",
+            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            ForeColor = Color.FromArgb(56, 189, 248),
+            BackColor = Color.FromArgb(16, 22, 38),
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Visible = false
+        };
+        _dashboardView.Controls.Add(_lblSyncProgress);
         _dashboardView.Controls.Add(_hudPreview);
 
         // Connected Info Card
@@ -688,6 +702,7 @@ public class MainForm : Form
         int rightW = contentW - leftW - 16;
 
         _hudPreview.Size = new Size(leftW, contentH - 48);
+        _lblSyncProgress.Bounds = new Rectangle(20, 48 + _hudPreview.Height - 36, leftW, 32);
 
         int rightX = 20 + leftW + 16;
         _connectedCard.Bounds = new Rectangle(rightX, 48, rightW, 182);
@@ -759,6 +774,7 @@ public class MainForm : Form
 
         if (json.StartsWith("FULL:"))
         {
+            ShowSyncProgress();
             var loaded = HudLayoutManager.LoadLayout(json.Substring(5));
             _hudPreview.Widgets = loaded;
             if (_lblSteeringRange != null)
@@ -807,8 +823,25 @@ public class MainForm : Form
         _lblPing.Text = "Current ping: -- ms";
     }
 
+    private void ShowSyncProgress()
+    {
+        if (InvokeRequired) { BeginInvoke(ShowSyncProgress); return; }
+        _lblSyncProgress.Text = "Receiving current layout... [██████████] 100%";
+        _lblSyncProgress.Visible = true;
+        Task.Run(async () =>
+        {
+            await Task.Delay(180);
+            if (!IsDisposed && _lblSyncProgress.IsHandleCreated)
+            {
+                BeginInvoke(() => { _lblSyncProgress.Visible = false; });
+            }
+        });
+    }
+
     private void UpdateUI(object? sender, EventArgs e)
     {
+        _hudPreview.IsConnected = _input.IsConnected;
+
         var now = DateTime.UtcNow;
         var elapsedSec = (now - _lastPpsTime).TotalSeconds;
         if (elapsedSec >= 0.5)
