@@ -9,7 +9,7 @@
 ### Turn your Android phone into a professional Virtual Steering Wheel.
 
 **Low Latency • Wi-Fi • vJoy • Touch Steering • Gyroscope**
-
+note: usb is still in development 
 <p>
 
 <a href="https://github.com/topeck0/OmniWheel/releases">
@@ -89,7 +89,7 @@ Designed for driving simulators with:
 | UDP | ✅ |
 | Gyroscope | ✅ |
 | Touch Steering | ✅ |
-| Profiles | ✅ |
+| Profiles |   |
 
 ---
 
