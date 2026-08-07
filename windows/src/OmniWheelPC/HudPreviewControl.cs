@@ -12,6 +12,13 @@ public class HudPreviewControl : Control
     private List<HudWidget> _widgets = new();
     private InputState _input = new();
     private int _steeringMaxAngle = 900;
+    private bool _isConnected;
+
+    public bool IsConnected
+    {
+        get => _isConnected;
+        set { _isConnected = value; Invalidate(); }
+    }
 
     public List<HudWidget> Widgets
     {
@@ -138,6 +145,15 @@ public class HudPreviewControl : Control
         using (var framePen = new Pen(Color.FromArgb(48, 60, 92), 1f))
             g.DrawRectangle(framePen, area);
 
+        if (!IsConnected)
+        {
+            using var font = new Font("Segoe UI", 16f, FontStyle.Bold);
+            using var brush = new SolidBrush(Color.FromArgb(100, 116, 139));
+            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString("No Connected Device", font, brush, area.X + area.Width / 2f, area.Y + area.Height / 2f, sf);
+            return;
+        }
+
         foreach (var w in _widgets)
         {
             // Respect the phone's clutch enable/disable setting.
@@ -195,7 +211,7 @@ public class HudPreviewControl : Control
         if (_thumbImage != null)
         {
             // Exact same icon as the phone, drawn to fit the widget square.
-            int drawSize = (int)(size * 0.85f);
+            int drawSize = (int)(size * 0.95f);
             int imgX = -drawSize / 2;
             int imgY = -drawSize / 2;
             g.DrawImage(_thumbImage, imgX, imgY, drawSize, drawSize);
@@ -203,19 +219,6 @@ public class HudPreviewControl : Control
         else
         {
             DrawFallbackWheel(g, size);
-        }
-
-        // OW badge
-        float hubRadius = size * 0.35f;
-        using (var hubBrush = new SolidBrush(Color.FromArgb(20, 26, 44)))
-            g.FillEllipse(hubBrush, -hubRadius, -hubRadius, hubRadius * 2f, hubRadius * 2f);
-        using (var hubBorder = new Pen(Color.FromArgb(99, 102, 241), 2f))
-            g.DrawEllipse(hubBorder, -hubRadius, -hubRadius, hubRadius * 2f, hubRadius * 2f);
-using (var font = new Font("Segoe UI", hubRadius * 0.5f, FontStyle.Bold))
-        using (var textBrush = new SolidBrush(Color.FromArgb(224, 231, 255)))
-        {
-            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            g.DrawString("OW", font, textBrush, 0, 0, sf);
         }
 
         g.Restore(state);
