@@ -8,7 +8,9 @@ import kotlin.concurrent.thread
 
 /**
  * Optimized discovery client.
- * - Broadcasts every 3s (was 2s) to reduce network noise
+ * - Fast start: 3 broadcasts in the first second (burst) so a running PC is
+ *   usually found immediately instead of waiting for a 3s cadence
+ * - Then keeps announcing every 2s to recover from dropped/missed packets
  * - Caches the discovery packet (same payload every time)
  * - Reuses receive buffer
  */
@@ -56,16 +58,22 @@ class DiscoveryClient(private val context: Context) {
             onLog?.invoke("Discovery: using random port for sending")
         }
         
-        // Broadcast every 3 seconds (reduced from 2s)
+        // Broadcast loop: quick burst first so the PC appears in <1s, then
+        // every 2s (was 3s) for robustness on routers that drop broadcast.
         discoverThread = thread(name = "Discovery") {
+            for (i in 0 until 3) {
+                if (!running) return@thread
+                try { sendDiscover() } catch (e: Exception) { }
+                Thread.sleep(250)
+            }
             while (running) {
                 try {
                     sendDiscover()
-                    Thread.sleep(3000)
+                    Thread.sleep(2000)
                 } catch (_: InterruptedException) { break }
                 catch (e: Exception) {
                     onLog?.invoke("Discovery send error: ${e.message}")
-                    Thread.sleep(3000)
+                    Thread.sleep(2000)
                 }
             }
         }
