@@ -86,6 +86,7 @@ class InputSender(private val context: Context) {
             )
             sock.send(DatagramPacket(pkt, pkt.size, addr))
         } catch (e: Exception) {
+            layoutSyncInfo = "META error: ${e.message}"
             if (_errorCount <= 3) Log.w(TAG, "Meta send: ${e.message}")
         }
     }
@@ -108,7 +109,10 @@ class InputSender(private val context: Context) {
                 try {
                     val pkt = Protocol.buildPacket(Protocol.TYPE_HUD_WIDGET, json.toByteArray(Charsets.UTF_8))
                     sock.send(DatagramPacket(pkt, pkt.size, addr))
-                } catch (e: Exception) { Log.w(TAG, "Widget send: ${e.message}") }
+                } catch (e: Exception) {
+                    layoutSyncInfo = "Widget error: ${e.message}"
+                    Log.w(TAG, "Widget send: ${e.message}")
+                }
                 sentWidgetJson[id] = json
             }
             // Notify server of deletions as an EMPTY replace
@@ -140,7 +144,10 @@ class InputSender(private val context: Context) {
             }
             fullLayoutBurstsSent++
             updateLayoutLabel()
-        } catch (e: Exception) { Log.w(TAG, "Full layout send: ${e.message}") }
+        } catch (e: Exception) {
+            layoutSyncInfo = "FULL error: ${e.message}"
+            Log.w(TAG, "Full layout send: ${e.message}")
+        }
     }
 
     /** Pull the `"id":"..."` value from a widget JSON string (cheap, no parser). */
