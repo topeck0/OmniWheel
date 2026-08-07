@@ -302,7 +302,7 @@ fun ControllerStatusBar(
         
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "v0.9.7",
+                text = "v0.9.8",
                 fontSize = 8.sp,
                 color = Color(0xFF555555)
             )
