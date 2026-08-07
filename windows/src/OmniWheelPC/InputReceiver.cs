@@ -313,7 +313,7 @@ public class InputState
     public int PhoneScreenWidthPx { get; set; }
     public int PhoneScreenHeightPx { get; set; }
     public string PhoneDeviceName { get; set; } = "";
-    public bool ClutchEnabled { get; set; } = true;
+    public bool ClutchEnabled { get; set; } = false;
 
     public DateTime Timestamp { get; set; }
 

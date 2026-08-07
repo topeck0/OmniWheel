@@ -210,7 +210,6 @@ public class MainForm : Form
         {
             var g = pe.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            // Draw logo phone icon with steering wheel inside
             using var phonePen = new Pen(TextWhite, 2f);
             var rect = new Rectangle(6, 2, 24, 32);
             g.DrawRoundedRectangle(phonePen, rect, 6);
@@ -221,7 +220,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel",
+            Text = "OmniWheel v0.9.1",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -592,6 +591,19 @@ public class MainForm : Form
         {
             ReleaseCapture();
             SendMessage(Handle, WM_NCLBUTTONDOWN, HT_CAPTION, 0);
+        }
+    }
+
+    /// <summary>
+    /// Ensure frameless window has WS_SIZEBOX style so Windows allows resizing.
+    /// </summary>
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.Style |= 0x00040000; // WS_SIZEBOX
+            return cp;
         }
     }
 
