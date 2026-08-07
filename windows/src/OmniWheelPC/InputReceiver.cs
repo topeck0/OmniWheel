@@ -16,6 +16,7 @@ internal class ChunkState
 {
     public int Total;
     public byte[] Buffer = Array.Empty<byte>();
+    public int[] ChunkLens = Array.Empty<int>();
     public bool[] ReceivedParts = Array.Empty<bool>();
     public int Received;
 }
@@ -166,6 +167,7 @@ public class InputReceiver : IDisposable
                             {
                                 Total = total,
                                 Buffer = new byte[(long)total * Protocol.HudChunkDataSize],
+                                ChunkLens = new int[total],
                                 ReceivedParts = new bool[total]
                             };
                             _chunkStates[key] = st;
@@ -173,11 +175,21 @@ public class InputReceiver : IDisposable
                         if (st.ReceivedParts[part]) continue; // duplicate chunk
                         int dataLen = hdr.PayloadLength - 2;
                         Array.Copy(data, hdr.HeaderSize + 2, st.Buffer, part * Protocol.HudChunkDataSize, dataLen);
+                        st.ChunkLens[part] = dataLen;
                         st.ReceivedParts[part] = true;
                         st.Received++;
                         if (st.Received == total)
                         {
-                            var json = Encoding.UTF8.GetString(st.Buffer).TrimEnd('\0');
+                            int totalLen = 0;
+                            foreach (int len in st.ChunkLens) totalLen += len;
+                            var exactBuf = new byte[totalLen];
+                            int destOffset = 0;
+                            for (int i = 0; i < total; i++)
+                            {
+                                Array.Copy(st.Buffer, i * Protocol.HudChunkDataSize, exactBuf, destOffset, st.ChunkLens[i]);
+                                destOffset += st.ChunkLens[i];
+                            }
+                            var json = Encoding.UTF8.GetString(exactBuf);
                             _chunkStates.Remove(key);
                             OnWidgetReceived?.Invoke("FULL:" + json);
                         }
