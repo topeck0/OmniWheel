@@ -10,7 +10,7 @@ public class PingGraphControl : Control
 {
     private readonly Queue<int> _pingHistory = new();
     private const int MaxSamples = 40;
-    private const int MaxPingScale = 100; // ms
+    private const int MaxPingScale = 1000; // ms — real one-way latency, not a fixed 0-100 guess
 
     public PingGraphControl()
     {
@@ -66,7 +66,8 @@ public class PingGraphControl : Control
             Color col = ping switch
             {
                 < 20 => Color.FromArgb(34, 197, 94),   // Green
-                < 50 => Color.FromArgb(234, 179, 8),   // Yellow
+                < 100 => Color.FromArgb(234, 179, 8),  // Yellow
+                < 300 => Color.FromArgb(249, 115, 22), // Orange
                 _ => Color.FromArgb(239, 68, 68)       // Red
             };
 

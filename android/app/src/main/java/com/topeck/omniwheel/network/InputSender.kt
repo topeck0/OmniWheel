@@ -26,7 +26,7 @@ class InputSender(private val context: Context) {
         private const val PROBE_INTERVAL_MS = 80L
         private const val ACK_TIMEOUT_MS = 2000L
         private const val MAX_PACKET_SIZE = 32
-        private const val FORCE_SEND_INTERVAL = 50 // ms: send even if unchanged
+        private const val FORCE_SEND_INTERVAL = 25 // ms: send even if unchanged
     }
 
     private var udpSocket: DatagramSocket? = null
@@ -343,16 +343,16 @@ class InputSender(private val context: Context) {
                             }
                             _sendCount++
 
-                            // REDUNDANT SEND on critical change: duplicate immediately
-                            // This fights packet loss on congested/old routers
-                            if (changed) {
-                                dupPacket?.let { dp ->
-                                    System.arraycopy(packet, 0, dp.data, 0, packet.size)
-                                    dp.length = packet.size
-                                    udpSocket?.send(dp)
-                                }
-                                _dupCount++
+                            // REDUNDANT SEND on EVERY packet, not just on change.
+                            // Each state update goes out twice back-to-back so a
+                            // single dropped UDP datagram can never delay the
+                            // steering — even on a congested/lossy router.
+                            dupPacket?.let { dp ->
+                                System.arraycopy(packet, 0, dp.data, 0, packet.size)
+                                dp.length = packet.size
+                                udpSocket?.send(dp)
                             }
+                            _dupCount++
 
                             if (forceSend) lastForceSendTime = nowMs
 

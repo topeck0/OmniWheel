@@ -40,6 +40,7 @@ public class InputReceiver : IDisposable
     private string? _ignoredOtherLogged;
     private DateTime _lastInputTime;
     private const int TimeoutMs = 8000;
+    private int _minLatencySample = -1;
 
     // Single reusable state — updated in place
     public InputState CurrentState { get; private set; } = new();
@@ -147,7 +148,7 @@ public class InputReceiver : IDisposable
                 }
                 else if (hdr.Type == Protocol.PacketType.Input && hdr.PayloadLength >= 5)
                 {
-                    ParseInputInPlace(data, hdr.HeaderSize, hdr.PayloadLength);
+                    ParseInputInPlace(data, hdr.HeaderSize, hdr.PayloadLength, hdr.TimestampMs);
                     OnInputReceived?.Invoke();
 
                     // Periodic logging (every 5 seconds)
@@ -231,9 +232,17 @@ public class InputReceiver : IDisposable
     /// Parse input payload and update CurrentState IN PLACE (zero allocation).
     /// Supports both v1 and v2 payload formats.
     /// </summary>
-    private void ParseInputInPlace(byte[] data, int headerSize, int payloadLen)
+    private void ParseInputInPlace(byte[] data, int headerSize, int payloadLen, int headerTsMs)
     {
         int off = headerSize;
+
+        // Real one-way latency from the phone's ms-within-second timestamp and
+        // our wall clock. The raw value includes any clock skew between the two
+        // devices, so the best (minimum) sample seen is used as the baseline.
+        int nowMs = (int)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 60000);
+        int age = (nowMs - headerTsMs + 60000) % 60000;
+        if (_minLatencySample < 0 || age < _minLatencySample) _minLatencySample = age;
+        CurrentState.LatencyMs = Math.Max(0, age - _minLatencySample);
 
         // Core inputs (always present)
         CurrentState.Steering = (short)(data[off] | (data[off + 1] << 8));
@@ -351,6 +360,7 @@ public class InputState
     public bool ClutchEnabled { get; set; } = true;
 
     public DateTime Timestamp { get; set; }
+    public int LatencyMs { get; set; }
 
     public float NormalizedSteering => Steering / 32768f;
     public float NormalizedThrottle => Throttle / 255f;
