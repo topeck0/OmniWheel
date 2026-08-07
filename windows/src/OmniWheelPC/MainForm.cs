@@ -118,7 +118,7 @@ public class MainForm : Form
         ClientSize = new Size(1100, 640);
         MinimumSize = new Size(880, 520);
         BackColor = BgDark;
-        FormBorderStyle = FormBorderStyle.None; // Custom modern frameless window
+        FormBorderStyle = FormBorderStyle.Sizable; // Resizable with zero native borders
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
 
@@ -221,7 +221,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.1",
+            Text = "OmniWheel v0.9.3",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -609,25 +609,20 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// Ensure frameless window has WS_SIZEBOX style so Windows allows resizing.
-    /// </summary>
-    protected override CreateParams CreateParams
-    {
-        get
-        {
-            var cp = base.CreateParams;
-            cp.Style |= 0x00040000; // WS_SIZEBOX
-            return cp;
-        }
-    }
-
-    /// <summary>
     /// Keep maximized frameless window within the monitor's working area so it
-    /// respects the taskbar instead of covering the whole screen, and make the
-    /// frameless window resizable by dragging its edges/corners.
+    /// respects the taskbar instead of covering the whole screen, eliminate the
+    /// native white caption/border line via WM_NCCALCSIZE, and make the window
+    /// resizable by dragging its edges/corners.
     /// </summary>
     protected override void WndProc(ref Message m)
     {
+        const int WM_NCCALCSIZE = 0x0083;
+        if (m.Msg == WM_NCCALCSIZE && m.WParam == (IntPtr)1)
+        {
+            m.Result = IntPtr.Zero;
+            return;
+        }
+
         if (m.Msg == WM_GETMINMAXINFO)
         {
             var sc = Screen.FromHandle(Handle).WorkingArea;
