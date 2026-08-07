@@ -132,7 +132,10 @@ public class MainForm : Form
         ClientSize = new Size(1100, 640);
         MinimumSize = new Size(880, 520);
         BackColor = BgDark;
-        FormBorderStyle = FormBorderStyle.Sizable; // Resizable with zero native borders
+        // Truly frameless: no native caption/border can ever be drawn (avoids
+        // the classic Windows frame). WS_THICKFRAME + WM_NCHITTEST below keep
+        // edge/corner resizing working.
+        FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterScreen;
         DoubleBuffered = true;
 
@@ -179,7 +182,7 @@ public class MainForm : Form
             _input.Start();
             _uiTimer.Start();
             _vJoyTimer.Start();
-            Log("OmniWheel PC v0.9.8 started");
+            Log("OmniWheel PC v0.9.9 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
@@ -240,7 +243,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.8",
+            Text = "OmniWheel v0.9.9",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -947,13 +950,13 @@ public class MainForm : Form
 
         if (_input.IsConnected)
         {
-            int ping = Math.Max(8, 20 - (_packetsPerSecond / 10));
-            _lblPing.Text = $"Current ping: {ping} ms";
-            _pingGraph.AddPing(ping);
+            int latency = _input.CurrentState.LatencyMs;
+            _lblPing.Text = $"Latency: {latency} ms";
+            _pingGraph.AddPing(latency);
         }
         else
         {
-            _lblPing.Text = "Current ping: -- ms";
+            _lblPing.Text = "Latency: -- ms";
         }
     }
 
