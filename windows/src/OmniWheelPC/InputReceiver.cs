@@ -40,7 +40,6 @@ public class InputReceiver : IDisposable
     private string? _ignoredOtherLogged;
     private DateTime _lastInputTime;
     private const int TimeoutMs = 8000;
-    private int _minLatencySample = -1;
 
     // Single reusable state — updated in place
     public InputState CurrentState { get; private set; } = new();
@@ -63,6 +62,7 @@ public class InputReceiver : IDisposable
         _udp.EnableBroadcast = true;
 
         _ = WatchdogAsync(_cts.Token);
+        _ = PingLoopAsync(_cts.Token);
         _task = Task.Run(RunAsync, _cts.Token);
         OnLog?.Invoke($"Input receiver listening on port {Protocol.InputPort} (aggressive mode, 512KB buf)");
     }
@@ -86,9 +86,56 @@ public class InputReceiver : IDisposable
                 _lastRemote = null;
                 _lockedEndPoint = null;
                 _ignoredOtherLogged = null;
-                _minLatencySample = -1;
             }
             wasConnected = connected;
+        }
+    }
+
+    /// <summary>
+    /// Send a timestamped PING to the connected phone every 500ms. The phone
+    /// echoes it back as a PONG with the timestamp untouched, so we can compute
+    /// a real, clock-skew-proof RTT latency (see the Pong handler).
+    /// </summary>
+    private async Task PingLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(500, ct);
+            var target = _lastRemote;
+            if (target == null || !IsConnected) continue;
+            try
+            {
+                long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var payload = new byte[4];
+                payload[0] = (byte)(nowMs & 0xFF);
+                payload[1] = (byte)((nowMs >> 8) & 0xFF);
+                payload[2] = (byte)((nowMs >> 16) & 0xFF);
+                payload[3] = (byte)((nowMs >> 24) & 0xFF);
+                var pkt = Protocol.BuildPacket(Protocol.PacketType.Ping, 0, payload);
+                await _udp!.SendAsync(pkt, pkt.Length, target);
+            }
+            catch { }
+        }
+    }
+
+    /// <summary>
+    /// Ask the connected phone to re-send its meta + full HUD layout right now.
+    /// Used when the receiver starts up (or reconnects) so the preview is never
+    /// left empty waiting for the phone's next periodic sync.
+    /// </summary>
+    public void RequestLayoutSync()
+    {
+        var target = _lastRemote ?? _lockedEndPoint;
+        if (target == null || !IsConnected) return;
+        try
+        {
+            var pkt = Protocol.BuildPacket(Protocol.PacketType.Connect, 0);
+            _udp!.Send(pkt, pkt.Length, target);
+            OnLog?.Invoke($"Requested layout resync from {target.Address}");
+        }
+        catch (Exception ex)
+        {
+            OnLog?.Invoke($"Resync request failed: {ex.Message}");
         }
     }
 
@@ -149,7 +196,7 @@ public class InputReceiver : IDisposable
                 }
                 else if (hdr.Type == Protocol.PacketType.Input && hdr.PayloadLength >= 5)
                 {
-                    ParseInputInPlace(data, hdr.HeaderSize, hdr.PayloadLength, hdr.TimestampMs);
+                    ParseInputInPlace(data, hdr.HeaderSize, hdr.PayloadLength);
                     OnInputReceived?.Invoke();
 
                     // Periodic logging (every 5 seconds)
@@ -166,6 +213,20 @@ public class InputReceiver : IDisposable
                 {
                     var ack = Protocol.BuildPacket(Protocol.PacketType.HeartbeatAck, hdr.Sequence);
                     await _udp.SendAsync(ack, ack.Length, result.RemoteEndPoint);
+                }
+                else if (hdr.Type == Protocol.PacketType.Pong && hdr.PayloadLength >= 4)
+                {
+                    // RTT = now - echoed send time. The phone echoes our 4-byte
+                    // timestamp untouched, so this is clock-skew proof.
+                    long tsLow = (uint)(data[hdr.HeaderSize]
+                        | (data[hdr.HeaderSize + 1] << 8)
+                        | (data[hdr.HeaderSize + 2] << 16)
+                        | (data[hdr.HeaderSize + 3] << 24));
+                    long nowUnix = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    long tsFull = (nowUnix & ~0xFFFFFFFFL) | tsLow;
+                    long rtt = nowUnix - tsFull;
+                    if (rtt < 0) rtt += 0x100000000L; // borrow across the 32-bit wrap
+                    CurrentState.LatencyMs = (int)Math.Max(0, rtt / 2);
                 }
                 else if (hdr.Type == Protocol.PacketType.Meta && hdr.PayloadLength >= 12)
                 {
@@ -233,23 +294,9 @@ public class InputReceiver : IDisposable
     /// Parse input payload and update CurrentState IN PLACE (zero allocation).
     /// Supports both v1 and v2 payload formats.
     /// </summary>
-    private void ParseInputInPlace(byte[] data, int headerSize, int payloadLen, int headerTsMs)
+    private void ParseInputInPlace(byte[] data, int headerSize, int payloadLen)
     {
         int off = headerSize;
-
-        // Real one-way latency. The phone sends its ms-within-second timestamp,
-        // so reconstruct the full send time from our own wall clock, then nudge
-        // it to the 60s cycle nearest "now". This avoids the mod-60000 wrap
-        // boundary that used to produce wild spikes. The raw value still
-        // includes any clock skew between the two devices, so the best
-        // (minimum) sample seen is used as the baseline.
-        long nowUnix = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        long sendEstimate = (nowUnix / 60000) * 60000 + headerTsMs;
-        if (sendEstimate > nowUnix + 30000) sendEstimate -= 60000;
-        else if (sendEstimate < nowUnix - 30000) sendEstimate += 60000;
-        int latency = (int)Math.Max(0, nowUnix - sendEstimate);
-        if (_minLatencySample < 0 || latency < _minLatencySample) _minLatencySample = latency;
-        CurrentState.LatencyMs = Math.Max(0, latency - _minLatencySample);
 
         // Core inputs (always present)
         CurrentState.Steering = (short)(data[off] | (data[off + 1] << 8));

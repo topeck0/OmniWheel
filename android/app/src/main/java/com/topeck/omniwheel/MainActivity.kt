@@ -306,6 +306,34 @@ fun ControllerScreen(
         }
     }
 
+    // When the PC receiver opens (or reconnects) it asks for the layout on
+    // demand. Reply immediately with the full current sync instead of making it
+    // wait up to 30s for the periodic loop above.
+    LaunchedEffect(Unit) {
+        inputSender.onResyncRequested = {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val bbm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+                    val cap = bbm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                    if (cap != null && cap in 0..100) {
+                        inputSender.metaBatteryPercent = cap
+                    }
+                    inputSender.metaMaxAngle = settings.steeringMaxAngle
+                    inputSender.metaClutchEnabled = settings.clutchEnabled
+                    val sendList = if (settings.clutchEnabled) hudLayout
+                        else hudLayout.filterNot { it.id == "clutch" }
+                    val fullJson = widgetListToJson(sendList)
+                    inputSender.sendMetaPacket()
+                    inputSender.sendFullLayout(fullJson)
+                    inputSender.syncLayout(sendList.map { it.toJson().toString() })
+                    inputSender.onLog?.invoke("Resync requested by PC — FULL ${fullJson.length}B resent")
+                } catch (t: Throwable) {
+                    inputSender.onLog?.invoke("Resync error: ${t.message}")
+                }
+            }
+        }
+    }
+
     val onBtn: (Int, Boolean) -> Unit = { btnId, pressed ->
         activeButtons.value = if (pressed) {
             activeButtons.value + btnId

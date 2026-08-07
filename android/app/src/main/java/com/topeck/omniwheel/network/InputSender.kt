@@ -33,9 +33,13 @@ class InputSender(private val context: Context) {
     private var running = false
     private var sendThread: Thread? = null
     private var heartbeatThread: Thread? = null
+    private var receiveThread: Thread? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var sendPacket: DatagramPacket? = null
     private var dupPacket: DatagramPacket? = null // duplicate for redundancy
+
+    /** Invoked on the receiver thread when the PC asks us to resend the layout. */
+    @Volatile var onResyncRequested: (() -> Unit)? = null
 
     var targetIp: String = ""
     var targetPort: Int = Protocol.INPUT_PORT
@@ -268,6 +272,7 @@ class InputSender(private val context: Context) {
 
                     startSendLoop()
                     startHeartbeat()
+                    startReceiveLoop()
                     onReady()
 
                 } catch (_: InterruptedException) { /* cancelled */ }
@@ -425,6 +430,45 @@ class InputSender(private val context: Context) {
         }
     }
 
+    /**
+     * Persistent listener on the same socket. Reacts to PC requests so the
+     * receiver never depends on a specific connect/disconnect order:
+     * - PING (0x09): echo it back as PONG with the payload untouched so the PC
+     *   can measure a clock-skew-proof RTT latency.
+     * - CONNECT (0x03): the PC just opened/needs the layout — resend it now.
+     */
+    private fun startReceiveLoop() {
+        receiveThread = thread(name = "InputReceiver") {
+            val buf = ByteArray(512)
+            while (running) {
+                try {
+                    val pkt = DatagramPacket(buf, buf.size)
+                    udpSocket?.receive(pkt)
+                    val data = buf.copyOfRange(0, pkt.length)
+                    val header = Protocol.parseHeader(data) ?: continue
+                    when (header.type) {
+                        Protocol.TYPE_PING -> {
+                            if (data.size > Protocol.HEADER_SIZE + Protocol.CRC_SIZE) {
+                                val echo = data.copyOfRange(Protocol.HEADER_SIZE, data.size - Protocol.CRC_SIZE)
+                                val pong = Protocol.buildPacket(Protocol.TYPE_PONG, echo)
+                                val sender = InetSocketAddress(pkt.address, pkt.port)
+                                udpSocket?.send(DatagramPacket(pong, pong.size, sender))
+                            }
+                        }
+                        Protocol.TYPE_CONNECT -> {
+                            onLog?.invoke("PC requested layout resync")
+                            onResyncRequested?.invoke()
+                        }
+                    }
+                } catch (_: InterruptedException) { break }
+                catch (_: SocketException) { if (!running) break }
+                catch (e: Exception) {
+                    if (running) onLog?.invoke("Receive error: ${e.message}")
+                }
+            }
+        }
+    }
+
     fun connectDirect(ip: String, onReady: () -> Unit, onError: ((String) -> Unit)? = null) {
         targetIp = ip
         stopInternal()
@@ -457,15 +501,17 @@ class InputSender(private val context: Context) {
 
             startSendLoop()
             startHeartbeat()
+            startReceiveLoop()
             onReady()
 
         } catch (e: Exception) {
             val msg = "Direct connect failed: ${e.message}"
             onLog?.invoke(msg)
             setState(State.DISCONNECTED)
-            onError?.invoke(msg)
+            onError?.invoke(e.message ?: "Unknown error")
             cleanup()
         }
+    }
     }
 
     fun disconnect() {
@@ -490,8 +536,10 @@ class InputSender(private val context: Context) {
         running = false
         sendThread?.interrupt()
         heartbeatThread?.interrupt()
+        receiveThread?.interrupt()
         sendThread = null
         heartbeatThread = null
+        receiveThread = null
         sendPacket = null
         dupPacket = null
         cleanup()

@@ -29,17 +29,11 @@ public class MainForm : Form
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-
     [DllImport("gdi32.dll")]
     private static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int cx, int cy);
 
     [DllImport("user32.dll")]
     private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
-
-    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
-    private const int DWMWCP_ROUND = 2;
 
     [System.Runtime.InteropServices.DllImport("winmm.dll")]
     private static extern uint timeBeginPeriod(uint wPeriod);
@@ -184,8 +178,16 @@ public class MainForm : Form
             _input.Start();
             _uiTimer.Start();
             _vJoyTimer.Start();
-            Log("OmniWheel PC v0.9.10 started");
+            Log("OmniWheel PC v0.9.11 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
+        };
+
+        // If the receiver is opened while the phone is already connected, the
+        // connection event may have fired before we could subscribe, so ask for
+        // the layout once on startup too.
+        Shown += (s, e) =>
+        {
+            if (_input.IsConnected) _input.RequestLayoutSync();
         };
 
         FormClosing += (s, e) =>
@@ -245,7 +247,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.10",
+            Text = "OmniWheel v0.9.11",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -634,17 +636,13 @@ public class MainForm : Form
 
     /// <summary>
     /// Round the window corners so they match the app's soft card edges.
-    /// Windows 11 rounds via DWM; older systems fall back to a rounded region.
+    /// DWM's rounded-corner attribute was abandoned: on Windows 11 it lets the
+    /// shell draw a light caption/border strip at the top of the window. The
+    /// region-based approach is fully client-side, so no native strip can ever
+    /// appear.
     /// </summary>
     private void ApplyRoundedCorners()
     {
-        try
-        {
-            int round = DWMWCP_ROUND;
-            int hr = DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int));
-            if (hr == 0) { _dwmRounded = true; return; }
-        }
-        catch { }
         _dwmRounded = false;
         ApplyRoundedRegion();
     }
@@ -797,6 +795,11 @@ public class MainForm : Form
         _metaLogged = false;
         _syncProgressShown = false;
         Log("Device connected — clearing preview, waiting for phone layout...");
+
+        // Ask the phone for its meta + full layout right now so the preview
+        // fills in immediately instead of waiting for the phone's next
+        // periodic sync (which can be up to 30s away).
+        _input.RequestLayoutSync();
 
         string devIp = _input.ConnectedDeviceIp ?? "Unknown";
         _lblDeviceName.Text = "connected device: --";
