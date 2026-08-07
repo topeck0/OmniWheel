@@ -54,6 +54,8 @@ object Protocol {
     const val TYPE_META = 0x0B.toByte()
     const val TYPE_HUD_WIDGET = 0x0C.toByte()
     const val TYPE_HUD_FULL = 0x0D.toByte()
+    const val TYPE_PING = 0x09.toByte()
+    const val TYPE_PONG = 0x0A.toByte()
 
     // Input payload offsets
     const val OFF_STEERING = 0
