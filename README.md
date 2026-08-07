@@ -8,7 +8,7 @@
 
 ### Turn your Android phone into a professional Virtual Steering Wheel.
 
-**Low Latency • Wi-Fi • USB • vJoy • Touch Steering • Gyroscope**
+**Low Latency • Wi-Fi • vJoy • Touch Steering • Gyroscope**
 
 <p>
 
