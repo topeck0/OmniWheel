@@ -12,8 +12,8 @@ android {
         applicationId = "com.topeck.omniwheel"
         minSdk = 21
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.9"
+        versionCode = 19
+        versionName = "0.9.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
