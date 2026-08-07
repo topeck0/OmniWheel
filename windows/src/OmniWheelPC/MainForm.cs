@@ -221,7 +221,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.3",
+            Text = "OmniWheel v0.9.4",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
