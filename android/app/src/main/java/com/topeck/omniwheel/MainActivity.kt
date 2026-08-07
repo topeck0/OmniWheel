@@ -246,6 +246,7 @@ fun ControllerScreen(
     val btnMap = remember { allButtons() }
     val hudLayout = remember { settings.loadHudLayout() }
     var lastPacketCount by remember { mutableIntStateOf(0) }
+    var layoutSyncLabel by remember { mutableStateOf(inputSender.layoutSyncInfo) }
     var gyroEnabled by remember { mutableStateOf(settings.gyroEnabled) }
     var backPressedOnce by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -282,6 +283,9 @@ fun ControllerScreen(
                 // is young so any dropped chunk is repaired by the next burst.
                 inputSender.sendFullLayout(fullJson)
                 inputSender.syncLayout(sendJsons)
+                inputSender.onLog?.invoke(
+                    "Layout → PC: ${sendJsons.size} widgets, FULL ${fullJson.length}B, clutch=${settings.clutchEnabled}"
+                )
 
                 val elapsed = System.currentTimeMillis() - startMs
                 val delayMs = if (elapsed < 3000) 400L else 30_000L
@@ -357,6 +361,8 @@ fun ControllerScreen(
             inputSender.clutch = (clutch * 255).toInt().toByte()
             inputSender.activeButtons = activeButtons.value
             lastPacketCount = inputSender.sendCount
+            val syncLabel = inputSender.layoutSyncInfo
+            if (syncLabel != layoutSyncLabel) layoutSyncLabel = syncLabel
             delay(1000L / 240)
         }
     }
@@ -368,6 +374,7 @@ fun ControllerScreen(
                 gyroActive = gyroEnabled && gyroManager.isEnabled,
                 connectedIp = connectedIp,
                 packetCount = if (settings.showPacketCounter) lastPacketCount else -1,
+                layoutSyncInfo = layoutSyncLabel,
             )
 
             // Main content rendered from the shared HUD layout (same as HUD editor)

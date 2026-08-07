@@ -63,6 +63,18 @@ class InputSender(private val context: Context) {
     private val metaLock = Any()
     private val sentWidgetJson = HashMap<String, String>()
 
+    // Live layout-sync status surfaced in the controller status bar so the
+    // user can see the phone actually transmitting HUD data to the PC.
+    @Volatile var layoutSyncInfo: String = "layout not sent yet"
+    @Volatile var widgetPacketsSent: Int = 0
+    @Volatile var fullLayoutBurstsSent: Int = 0
+    private val timeFmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+
+    private fun updateLayoutLabel() {
+        layoutSyncInfo = timeFmt.format(System.currentTimeMillis()) +
+            " · ${widgetPacketsSent} widgets · FULL ${fullLayoutBurstsSent}x"
+    }
+
     fun sendMetaPacket() {
         val sock = udpSocket ?: return
         val addr = try { InetSocketAddress(targetIp, Protocol.INPUT_PORT) } catch (e: Exception) { return }
@@ -109,6 +121,8 @@ class InputSender(private val context: Context) {
                 } catch (e: Exception) { }
                 sentWidgetJson.remove(id)
             }
+            widgetPacketsSent = currentIds.size
+            updateLayoutLabel()
         }
     }
 
@@ -124,6 +138,8 @@ class InputSender(private val context: Context) {
             for (pkt in Protocol.buildFullLayoutPackets(fullJson)) {
                 sock.send(DatagramPacket(pkt, pkt.size, addr))
             }
+            fullLayoutBurstsSent++
+            updateLayoutLabel()
         } catch (e: Exception) { Log.w(TAG, "Full layout send: ${e.message}") }
     }
 
