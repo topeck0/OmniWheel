@@ -199,10 +199,11 @@ public class HudPreviewControl : Control
         float centerX = rect.X + rect.Width / 2f;
         float centerY = rect.Y + rect.Height / 2f;
 
-        // Steering rotation angle
+        // Steering rotation angle — the phone rotates its wheel by
+        // normalized * maxAngleDeg, so we mirror it exactly (no division).
         float normSteer = _input.NormalizedSteering; // -1..1
         int maxAngle = _input.PhoneMaxAngle > 0 ? _input.PhoneMaxAngle : _steeringMaxAngle;
-        float angleDeg = normSteer * (maxAngle / 2f);
+        float angleDeg = normSteer * maxAngle;
 
         var state = g.Save();
         g.TranslateTransform(centerX, centerY);

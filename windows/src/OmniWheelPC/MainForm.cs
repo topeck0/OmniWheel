@@ -160,7 +160,7 @@ public class MainForm : Form
             _input.Start();
             _uiTimer.Start();
             _vJoyTimer.Start();
-            Log("OmniWheel PC v0.9.1 started");
+            Log("OmniWheel PC v0.9.5 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
@@ -221,7 +221,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.4",
+            Text = "OmniWheel v0.9.5",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -733,6 +733,13 @@ public class MainForm : Form
         _connHeaderLabel.Text = "Connected *";
         _connHeaderLabel.ForeColor = GreenDot;
 
+        // Start from an EMPTY preview so only the layout the phone actually
+        // sends is shown (a stale/default layout must never linger, e.g. a
+        // clutch widget the phone no longer uses).
+        _hudPreview.Widgets = new List<HudWidget>();
+        _metaLogged = false;
+        Log("Device connected — clearing preview, waiting for phone layout...");
+
         string devIp = _input.ConnectedDeviceIp ?? "Unknown";
         _lblDeviceName.Text = "connected device: --";
         _lblPhoneIp.Text = $"Phone IP: {devIp}";
@@ -770,10 +777,23 @@ public class MainForm : Form
         if (json.StartsWith("FULL:"))
         {
             ShowSyncProgress();
-            var loaded = HudLayoutManager.LoadLayout(json.Substring(5));
+            var layoutJson = json.Substring(5);
+            var loaded = HudLayoutManager.LoadLayout(layoutJson);
             _hudPreview.Widgets = loaded;
+            try
+            {
+                // Definitive diagnostic: dump what the phone sent so any future
+                // layout mismatch is instantly verifiable from this file.
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "omniwheel_last_layout.json"),
+                    layoutJson);
+            }
+            catch { }
             if (_lblSteeringRange != null)
-                Log("HUD layout received from phone (" + loaded.Count + " widgets)");
+            {
+                string sample = loaded.Count > 0 ? $" | first={loaded[0].Id} cx={loaded[0].Cx} cy={loaded[0].Cy}" : "";
+                Log("HUD layout received from phone (" + loaded.Count + " widgets)" + sample);
+            }
         }
         else
         {

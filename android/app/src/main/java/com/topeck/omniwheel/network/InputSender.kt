@@ -79,9 +79,10 @@ class InputSender(private val context: Context) {
     }
 
     /**
-     * Send HUD layout widgets to the receiver. Only widgets whose JSON changed
-     * since the last successful send (or never sent) go over the wire — nothing
-     * is resent from scratch. Each packet carries one widget (~<255B).
+     * Send HUD layout widgets to the receiver. EVERY widget is sent on every
+     * call so a single lost UDP packet can never leave the PC preview stale or
+     * missing an element. Widgets that no longer exist are announced as
+     * removals so the PC drops them too.
      */
     fun syncLayout(widgetJsons: List<String>) {
         val sock = udpSocket ?: return
@@ -92,14 +93,11 @@ class InputSender(private val context: Context) {
                 // Extract the widget id without pulling in JSON parsing.
                 val id = extractJsonId(json) ?: continue
                 currentIds.add(id)
-                val prev = sentWidgetJson[id]
-                if (prev != json) {
-                    try {
-                        val pkt = Protocol.buildPacket(Protocol.TYPE_HUD_WIDGET, json.toByteArray(Charsets.UTF_8))
-                        sock.send(DatagramPacket(pkt, pkt.size, addr))
-                        sentWidgetJson[id] = json
-                    } catch (e: Exception) { Log.w(TAG, "Widget send: ${e.message}") }
-                }
+                try {
+                    val pkt = Protocol.buildPacket(Protocol.TYPE_HUD_WIDGET, json.toByteArray(Charsets.UTF_8))
+                    sock.send(DatagramPacket(pkt, pkt.size, addr))
+                } catch (e: Exception) { Log.w(TAG, "Widget send: ${e.message}") }
+                sentWidgetJson[id] = json
             }
             // Notify server of deletions as an EMPTY replace
             val removed = sentWidgetJson.keys.toList() - currentIds
@@ -195,6 +193,7 @@ class InputSender(private val context: Context) {
             _skipCount = 0
             _dupCount = 0
             _errorCount = 0
+            synchronized(metaLock) { sentWidgetJson.clear() }
             setState(State.CONNECTING)
             onLog?.invoke("Connecting to $targetIp...")
 
@@ -425,6 +424,7 @@ class InputSender(private val context: Context) {
             _skipCount = 0
             _dupCount = 0
             _errorCount = 0
+            synchronized(metaLock) { sentWidgetJson.clear() }
             setState(State.CONNECTED)
             onLog?.invoke("Direct connect to $targetIp (aggressive, no handshake)")
 
