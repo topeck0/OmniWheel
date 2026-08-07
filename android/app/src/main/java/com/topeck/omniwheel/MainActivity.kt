@@ -270,7 +270,14 @@ fun ControllerScreen(
             // Never transmit the clutch widget when it is disabled.
             val sendList = if (settings.clutchEnabled) hudLayout
                 else hudLayout.filterNot { it.id == "clutch" }
-            inputSender.syncLayout(sendList.map { it.toJson().toString() })
+            val sendJsons = sendList.map { it.toJson().toString() }
+
+            // First pass: send the authoritative full layout (chunked) so the
+            // PC preview is an exact copy even if individual packets get lost.
+            if (System.currentTimeMillis() - startMs < 700) {
+                inputSender.sendFullLayout(widgetListToJson(sendList))
+            }
+            inputSender.syncLayout(sendJsons)
 
             val elapsed = System.currentTimeMillis() - startMs
             delay(if (elapsed < 3000) 600L else 30_000L)

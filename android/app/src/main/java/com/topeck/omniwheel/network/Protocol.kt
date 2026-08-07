@@ -233,6 +233,29 @@ object Protocol {
         return buildPacket(TYPE_META, payload)
     }
 
+    /** Max payload a HUD_FULL chunk can carry (payload length is 1 byte). */
+    const val HUD_CHUNK_SIZE = 253
+
+    /**
+     * Split a (potentially >255-byte) layout JSON array into chained chunks:
+     *   [0] part index, [1] total parts, [2..] data
+     */
+    fun buildFullLayoutPackets(fullJson: String): List<ByteArray> {
+        val bytes = fullJson.toByteArray(Charsets.UTF_8)
+        val total = (bytes.size + HUD_CHUNK_SIZE - 1) / HUD_CHUNK_SIZE
+        val packets = ArrayList<ByteArray>(total)
+        for (i in 0 until total) {
+            val start = i * HUD_CHUNK_SIZE
+            val len = minOf(HUD_CHUNK_SIZE, bytes.size - start)
+            val payload = ByteArray(2 + len)
+            payload[0] = i.toByte()
+            payload[1] = total.toByte()
+            bytes.copyInto(payload, 2, start, start + len)
+            packets.add(buildPacket(TYPE_HUD_FULL, payload))
+        }
+        return packets
+    }
+
     // ========== PARSING ==========
 
     data class ParsedHeader(

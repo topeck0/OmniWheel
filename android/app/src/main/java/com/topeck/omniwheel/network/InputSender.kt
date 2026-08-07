@@ -114,6 +114,21 @@ class InputSender(private val context: Context) {
         }
     }
 
+    /**
+     * Send the entire layout as chained chunks. The receiver replaces its whole
+     * widget list, which authoritatively handles deletions and any dropped
+     * per-widget packets.
+     */
+    fun sendFullLayout(fullJson: String) {
+        val sock = udpSocket ?: return
+        val addr = try { InetSocketAddress(targetIp, Protocol.INPUT_PORT) } catch (e: Exception) { return }
+        try {
+            for (pkt in Protocol.buildFullLayoutPackets(fullJson)) {
+                sock.send(DatagramPacket(pkt, pkt.size, addr))
+            }
+        } catch (e: Exception) { Log.w(TAG, "Full layout send: ${e.message}") }
+    }
+
     /** Pull the `"id":"..."` value from a widget JSON string (cheap, no parser). */
     private fun extractJsonId(json: String): String? {
         val marker = "\"id\""

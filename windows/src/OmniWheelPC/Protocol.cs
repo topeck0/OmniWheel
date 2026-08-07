@@ -48,6 +48,9 @@ public static class Protocol
     public const int OffGyroZ = 9;
     public const int ButtonBytes = 3; // always 3 bytes for up to 24 buttons
 
+    // HUD full-layout chunking: max data bytes per chunk (payload is 1 byte len)
+    public const int HudChunkDataSize = 253;
+
     // ========== CRC-16/CCITT-FALSE LOOKUP TABLE ==========
     private static readonly ushort[] CrcTable = new ushort[256];
 

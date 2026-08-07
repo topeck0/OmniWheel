@@ -12,6 +12,14 @@ namespace OmniWheelPC.Network;
 /// - Large socket buffer for burst absorption
 /// - DontFragment + TTL=255 for aggressive delivery
 /// </summary>
+internal class ChunkState
+{
+    public int Total;
+    public byte[] Buffer = Array.Empty<byte>();
+    public bool[] ReceivedParts = Array.Empty<bool>();
+    public int Received;
+}
+
 public class InputReceiver : IDisposable
 {
     private UdpClient? _udp;
@@ -37,6 +45,7 @@ public class InputReceiver : IDisposable
 
     // Reusable receive buffer
     private byte[]? _recvBuf;
+    private readonly Dictionary<string, ChunkState> _chunkStates = new();
 
     public void Start()
     {
@@ -144,10 +153,35 @@ public class InputReceiver : IDisposable
                     var json = Encoding.UTF8.GetString(data, hdr.HeaderSize, hdr.PayloadLength);
                     OnWidgetReceived?.Invoke(json);
                 }
-                else if (hdr.Type == Protocol.PacketType.HudFull && hdr.PayloadLength > 0)
+                else if (hdr.Type == Protocol.PacketType.HudFull && hdr.PayloadLength >= 3)
                 {
-                    var json = Encoding.UTF8.GetString(data, hdr.HeaderSize, hdr.PayloadLength);
-                    OnWidgetReceived?.Invoke("FULL:" + json);
+                    int part = data[hdr.HeaderSize];
+                    int total = data[hdr.HeaderSize + 1];
+                    if (total > 0 && total <= 32 && part < total)
+                    {
+                        var key = _lastRemote?.Address.ToString() ?? "?";
+                        if (!_chunkStates.TryGetValue(key, out var st) || st.Total != total)
+                        {
+                            st = new ChunkState
+                            {
+                                Total = total,
+                                Buffer = new byte[(long)total * Protocol.HudChunkDataSize],
+                                ReceivedParts = new bool[total]
+                            };
+                            _chunkStates[key] = st;
+                        }
+                        if (st.ReceivedParts[part]) continue; // duplicate chunk
+                        int dataLen = hdr.PayloadLength - 2;
+                        Array.Copy(data, hdr.HeaderSize + 2, st.Buffer, part * Protocol.HudChunkDataSize, dataLen);
+                        st.ReceivedParts[part] = true;
+                        st.Received++;
+                        if (st.Received == total)
+                        {
+                            var json = Encoding.UTF8.GetString(st.Buffer).TrimEnd('\0');
+                            _chunkStates.Remove(key);
+                            OnWidgetReceived?.Invoke("FULL:" + json);
+                        }
+                    }
                 }
             }
             catch (OperationCanceledException) { break; }
