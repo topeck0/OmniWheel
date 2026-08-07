@@ -28,8 +28,10 @@ import com.topeck.omniwheel.network.DiscoveryClient
 import com.topeck.omniwheel.network.InputSender
 import com.topeck.omniwheel.sensor.GyroManager
 import com.topeck.omniwheel.ui.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
 
 enum class AppScreen { CONNECTION, CONTROLLER, SETTINGS, HUD_EDITOR, LOGS }
@@ -271,7 +273,6 @@ fun ControllerScreen(
                 inputSender.metaMaxAngle = settings.steeringMaxAngle
                 inputSender.metaDeviceType = Build.MODEL.ifBlank { "Android Phone" }
                 inputSender.metaClutchEnabled = settings.clutchEnabled
-                inputSender.sendMetaPacket()
 
                 // Never transmit the clutch widget when it is disabled.
                 val sendList = if (settings.clutchEnabled) hudLayout
@@ -279,10 +280,15 @@ fun ControllerScreen(
                 val fullJson = widgetListToJson(sendList)
                 val sendJsons = sendList.map { it.toJson().toString() }
 
-                // Authoritative full layout: fast cadence while the connection
-                // is young so any dropped chunk is repaired by the next burst.
-                inputSender.sendFullLayout(fullJson)
-                inputSender.syncLayout(sendJsons)
+                // ALL network I/O MUST leave the main thread. Android throws
+                // NetworkOnMainThreadException on any socket send/receive on the
+                // main thread, which previously silently killed every HUD/meta
+                // send (input worked only because it sends from its own thread).
+                withContext(Dispatchers.IO) {
+                    inputSender.sendMetaPacket()
+                    inputSender.sendFullLayout(fullJson)
+                    inputSender.syncLayout(sendJsons)
+                }
                 inputSender.onLog?.invoke(
                     "Layout → PC: ${sendJsons.size} widgets, FULL ${fullJson.length}B, clutch=${settings.clutchEnabled}"
                 )
@@ -395,7 +401,7 @@ fun ControllerScreen(
                     if (inputSender.metaScreenWidthPx != wpx || inputSender.metaScreenHeightPx != hpx) {
                         inputSender.metaScreenWidthPx = wpx
                         inputSender.metaScreenHeightPx = hpx
-                        inputSender.sendMetaPacket()
+                        withContext(Dispatchers.IO) { inputSender.sendMetaPacket() }
                     }
                 }
 
