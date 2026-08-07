@@ -86,6 +86,7 @@ public class InputReceiver : IDisposable
                 _lastRemote = null;
                 _lockedEndPoint = null;
                 _ignoredOtherLogged = null;
+                _minLatencySample = -1;
             }
             wasConnected = connected;
         }
@@ -236,13 +237,19 @@ public class InputReceiver : IDisposable
     {
         int off = headerSize;
 
-        // Real one-way latency from the phone's ms-within-second timestamp and
-        // our wall clock. The raw value includes any clock skew between the two
-        // devices, so the best (minimum) sample seen is used as the baseline.
-        int nowMs = (int)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 60000);
-        int age = (nowMs - headerTsMs + 60000) % 60000;
-        if (_minLatencySample < 0 || age < _minLatencySample) _minLatencySample = age;
-        CurrentState.LatencyMs = Math.Max(0, age - _minLatencySample);
+        // Real one-way latency. The phone sends its ms-within-second timestamp,
+        // so reconstruct the full send time from our own wall clock, then nudge
+        // it to the 60s cycle nearest "now". This avoids the mod-60000 wrap
+        // boundary that used to produce wild spikes. The raw value still
+        // includes any clock skew between the two devices, so the best
+        // (minimum) sample seen is used as the baseline.
+        long nowUnix = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        long sendEstimate = (nowUnix / 60000) * 60000 + headerTsMs;
+        if (sendEstimate > nowUnix + 30000) sendEstimate -= 60000;
+        else if (sendEstimate < nowUnix - 30000) sendEstimate += 60000;
+        int latency = (int)Math.Max(0, nowUnix - sendEstimate);
+        if (_minLatencySample < 0 || latency < _minLatencySample) _minLatencySample = latency;
+        CurrentState.LatencyMs = Math.Max(0, latency - _minLatencySample);
 
         // Core inputs (always present)
         CurrentState.Steering = (short)(data[off] | (data[off + 1] << 8));

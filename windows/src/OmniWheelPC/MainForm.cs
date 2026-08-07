@@ -125,6 +125,8 @@ public class MainForm : Form
     private DateTime _lastRenderedInput = DateTime.MinValue;
     private bool _syncProgressShown;
     private bool _dwmRounded;
+    private long _lastPingSampleMs = -1;
+    private int _smoothedLatency = -1;
 
     public MainForm()
     {
@@ -182,7 +184,7 @@ public class MainForm : Form
             _input.Start();
             _uiTimer.Start();
             _vJoyTimer.Start();
-            Log("OmniWheel PC v0.9.9 started");
+            Log("OmniWheel PC v0.9.10 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
@@ -243,7 +245,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.9",
+            Text = "OmniWheel v0.9.10",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -659,20 +661,6 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// Guarantee the window carries the thick frame style so edge dragging is
-    /// always possible, independent of the visible (zeroed) non-client area.
-    /// </summary>
-    protected override CreateParams CreateParams
-    {
-        get
-        {
-            var cp = base.CreateParams;
-            cp.Style |= 0x00040000; // WS_SIZEBOX / WS_THICKFRAME
-            return cp;
-        }
-    }
-
-    /// <summary>
     /// Keep maximized frameless window within the monitor's working area so it
     /// respects the taskbar instead of covering the whole screen, eliminate the
     /// native white caption/border line via WM_NCCALCSIZE, and make the window
@@ -950,12 +938,21 @@ public class MainForm : Form
 
         if (_input.IsConnected)
         {
-            int latency = _input.CurrentState.LatencyMs;
-            _lblPing.Text = $"Latency: {latency} ms";
-            _pingGraph.AddPing(latency);
+            // Sample latency at 4 Hz and smooth it with an EMA so the number
+            // settles instead of flickering with every packet burst.
+            long nowMs = now.Ticks / TimeSpan.TicksPerMillisecond;
+            if (_lastPingSampleMs < 0 || nowMs - _lastPingSampleMs >= 250)
+            {
+                _lastPingSampleMs = nowMs;
+                int raw = _input.CurrentState.LatencyMs;
+                _smoothedLatency = _smoothedLatency < 0 ? raw : (int)(_smoothedLatency * 0.7 + raw * 0.3);
+                _lblPing.Text = $"Latency: {_smoothedLatency} ms";
+                _pingGraph.AddPing(_smoothedLatency);
+            }
         }
         else
         {
+            _smoothedLatency = -1;
             _lblPing.Text = "Latency: -- ms";
         }
     }
