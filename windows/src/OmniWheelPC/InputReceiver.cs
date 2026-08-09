@@ -40,6 +40,8 @@ public class InputReceiver : IDisposable
     private string? _ignoredOtherLogged;
     private DateTime _lastInputTime;
     private const int TimeoutMs = 8000;
+    private byte _lastInputSeq;
+    private bool _hasInputSeq;
 
     // Single reusable state — updated in place
     public InputState CurrentState { get; private set; } = new();
@@ -86,6 +88,7 @@ public class InputReceiver : IDisposable
                 _lastRemote = null;
                 _lockedEndPoint = null;
                 _ignoredOtherLogged = null;
+                _hasInputSeq = false;
             }
             wasConnected = connected;
         }
@@ -196,6 +199,20 @@ public class InputReceiver : IDisposable
                 }
                 else if (hdr.Type == Protocol.PacketType.Input && hdr.PayloadLength >= 5)
                 {
+                    // Reject stale/out-of-order replays (UDP can reorder): an
+                    // old packet arriving late would otherwise yank the wheel
+                    // backward after we already applied a newer value. The phone
+                    // sequence is 0..127 (wraps at 128), so measure the forward
+                    // distance modulo 128 and skip anything more than half a
+                    // cycle behind. Duplicates (distance 0) are fine.
+                    if (_hasInputSeq)
+                    {
+                        int dist = (hdr.Sequence - _lastInputSeq) & 0x7F;
+                        if (dist != 0 && dist >= 64) continue;
+                    }
+                    _hasInputSeq = true;
+                    _lastInputSeq = hdr.Sequence;
+
                     ParseInputInPlace(data, hdr.HeaderSize, hdr.PayloadLength);
                     OnInputReceived?.Invoke();
 

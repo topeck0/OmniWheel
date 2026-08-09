@@ -47,7 +47,6 @@ public class MainForm : Form
     private readonly DiscoveryServer _discovery;
     private readonly InputReceiver _input;
     private readonly VJoyController _vJoy;
-    private readonly System.Windows.Forms.Timer _vJoyTimer;
     private readonly System.Windows.Forms.Timer _uiTimer;
 
     // Theme Colors (Matching mockup image exactly)
@@ -152,13 +151,6 @@ public class MainForm : Form
         _vJoy = new VJoyController();
         _vJoy.OnLog += Log;
 
-        _vJoyTimer = new System.Windows.Forms.Timer { Interval = 1 };
-        _vJoyTimer.Tick += (_, _) =>
-        {
-            if (_vJoy.IsAvailable && _input.IsConnected)
-                _vJoy.Update(_input.CurrentState);
-        };
-
         _uiTimer = new System.Windows.Forms.Timer { Interval = 1 }; // ~1ms (drives high-refresh preview)
         _uiTimer.Tick += UpdateUI;
 
@@ -177,8 +169,7 @@ public class MainForm : Form
             _discovery.Start();
             _input.Start();
             _uiTimer.Start();
-            _vJoyTimer.Start();
-            Log("OmniWheel PC v0.9.11 started");
+            Log("OmniWheel PC v0.9.12 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
@@ -204,7 +195,6 @@ public class MainForm : Form
         try
         {
             _uiTimer.Stop();
-            _vJoyTimer.Stop();
             _discovery.Dispose();
         }
         catch { }
@@ -247,7 +237,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.11",
+            Text = "OmniWheel v0.9.12",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -780,6 +770,13 @@ public class MainForm : Form
     {
         _packetCount++;
         _hudPreview.InputState = _input.CurrentState;
+
+        // Push straight to the vJoy device on the receiver thread. This runs at
+        // the real packet rate (hundreds of Hz) instead of the ~64Hz WinForms
+        // WM_TIMER rate, so the game sees the same smooth, immediate axis
+        // updates the preview shows — no added wheel/gear lag.
+        if (_vJoy.IsAvailable)
+            _vJoy.Update(_input.CurrentState);
     }
 
     private void OnDeviceConnected()
