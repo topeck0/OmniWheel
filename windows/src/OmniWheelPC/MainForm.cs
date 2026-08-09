@@ -744,6 +744,21 @@ public class MainForm : Form
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MARGINS { public int Left, Right, Top, Bottom; }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_FRAMECHANGED = 0x0020;
+    private const uint SWP_NOOWNERZORDER = 0x0200;
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOSIZE = 0x0001;
+
     /// <summary>
     /// Round the window corners so they match the app's soft card edges.
     /// DWM's rounded-corner attribute was abandoned: on Windows 11 it lets the
@@ -754,13 +769,31 @@ public class MainForm : Form
     private void ApplyRoundedCorners()
     {
         _dwmRounded = false;
+        if (!IsHandleCreated) return;
+
         // DWMWA_NCRENDERING_POLICY = 2, DWMNCRP_DISABLED = 1 — stop DWM from
         // drawing ANY non-client chrome (caption glow, snap-adjusted border).
-        if (IsHandleCreated)
-        {
-            int disabled = 1;
-            DwmSetWindowAttribute(Handle, 2, ref disabled, sizeof(int));
-        }
+        int disabled = 1;
+        DwmSetWindowAttribute(Handle, 2, ref disabled, sizeof(int));
+
+        // DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_DONOTROUND = 1 — stop
+        // Windows 11 from drawing its own rounded light border around the
+        // window (another source of the phantom top strip). We do our own
+        // rounding via the region, so DWM rounding is unnecessary.
+        int donotround = 1;
+        DwmSetWindowAttribute(Handle, 33, ref donotround, sizeof(int));
+
+        // Equivalent of "ExtendsContentIntoTitleBar = true": push the DWM
+        // frame completely into the client area with negative margins so DWM
+        // does NOT reserve/reserve-paint any caption rect at the top.
+        var margins = new MARGINS { Left = -1, Right = -1, Top = -1, Bottom = -1 };
+        DwmExtendFrameIntoClientArea(Handle, ref margins);
+
+        // Force Windows to re-run the frame layout with the stripped styles, so
+        // any caption rect DWM cached at create time is dropped for good.
+        SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE);
+
         ApplyRoundedRegion();
     }
 
@@ -787,6 +820,25 @@ public class MainForm : Form
         if (m.Msg == WM_NCCALCSIZE && m.WParam == (IntPtr)1)
         {
             m.Result = IntPtr.Zero;
+            return;
+        }
+
+        // Never let Windows paint the caption/frame ourselves: skip everything
+        // the non-client area would normally do. This is the WinForms
+        // equivalent of AppWindow.TitleBar.ExtendsContentIntoTitleBar = true
+        // (that WinAppSDK API only exists for WinUI 3, not WinForms).
+        const int WM_NCPAINT = 0x0085;
+        const int WM_NCACTIVATE = 0x0086;
+        if (m.Msg == WM_NCPAINT)
+        {
+            m.Result = IntPtr.Zero;
+            return;
+        }
+        if (m.Msg == WM_NCACTIVATE)
+        {
+            // Return "true": tells the system the window is drawn activated
+            // and stops it from re-rendering the caption/frame on activation.
+            m.Result = (IntPtr)1;
             return;
         }
 
