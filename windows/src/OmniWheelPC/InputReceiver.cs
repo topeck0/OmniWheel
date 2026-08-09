@@ -116,6 +116,7 @@ public class InputReceiver : IDisposable
 
                 // Only one phone on the wire at a time — replace any previous
                 // USB session.
+                client.NoDelay = true; // low-latency frames, no Nagle batching
                 Interlocked.Exchange(ref _usbClient, client)?.Dispose();
                 var stream = client.GetStream();
                 var oldStream = _usbStream;
@@ -176,6 +177,20 @@ public class InputReceiver : IDisposable
     private static void TryDispose(TcpClient client)
     {
         try { client.Dispose(); } catch { }
+    }
+
+    /// <summary>
+    /// Forcefully close the current USB debugging session right now, without
+    /// waiting for the remote to drop. Used when the user toggles USB off.
+    /// Disposing the socket makes any blocking ReadAsync throw immediately,
+    /// which unrolls the accept handler's reader task and runs its normal
+    /// teardown (state clear + OnDisconnected), so the shared connection state
+    /// always settles consistently.
+    /// </summary>
+    public void StopUsbSession()
+    {
+        var client = _usbClient;
+        if (client != null) TryDispose(client);
     }
 
     /// <summary>

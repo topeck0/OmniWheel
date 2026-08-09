@@ -387,6 +387,23 @@ fun ControllerScreen(
         }
     }
 
+    // If the transport drops while driving (e.g. USB cable pulled, adb reverse
+    // torn down, broken pipe), come back to the connection screen so the user
+    // can reconnect instead of silently driving a dead link. Track the
+    // CONNECTED -> DISCONNECTED transition explicitly so the initial
+    // DISCONNECTED state never yanks us back on first open.
+    var linkWasConnected by remember(connectedIp) { mutableStateOf(false) }
+    LaunchedEffect(inputSender.state) {
+        when (inputSender.state) {
+            InputSender.State.CONNECTED -> linkWasConnected = true
+            InputSender.State.DISCONNECTED -> if (linkWasConnected) {
+                linkWasConnected = false
+                onBack()
+            }
+            else -> {}
+        }
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             inputSender.throttle = if (settings.pedalReturnOnRelease || throttle > 0f)

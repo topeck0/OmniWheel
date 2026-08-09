@@ -114,7 +114,8 @@ class InputSender(private val context: Context) {
             }
             return
         }
-        // USB path
+        // USB path — write lock only. The receives never hold this lock, so a
+        // blocked read can't starve the sender (see receivePacket()).
         synchronized(usbLock) {
             val out = usbOut ?: return
             try {
@@ -122,9 +123,27 @@ class InputSender(private val context: Context) {
                 out.write(pkt)
                 out.flush()
             } catch (e: Exception) {
-                if (running) layoutSyncInfo = "usb send error: ${e.message}"
+                if (running) {
+                    layoutSyncInfo = "usb send error: ${e.message}"
+                    Log.w(TAG, "usb send: ${e.message}")
+                    if (e is java.io.IOException) failUsbTransport("USB write failed: ${e.message}")
+                }
             }
         }
+    }
+
+    /**
+     * Give up on the USB transport. We are called from the sender or the
+     * receiver thread when the adb-reverse bridge drops out from under us
+     * (broken pipe). The send/receive loops observe `running == false` and end.
+     */
+    private fun failUsbTransport(reason: String) {
+        if (!running) return
+        running = false
+        isUsbConnection = false
+        try { usbSocket?.close() } catch (_: Exception) {}
+        onLog?.invoke(reason)
+        setState(State.DISCONNECTED)
     }
 
     /** Receive one packet (UDP datagram or USB frame), null when shutting down. */
@@ -139,16 +158,23 @@ class InputSender(private val context: Context) {
             } catch (e: Exception) { null }
         }
         val input = usbIn ?: return null
-        return synchronized(usbLock) {
-            try {
-                val len = input.readInt() // big-endian
-                if (len <= 0 || len > 65535) null
-                else {
-                    val data = ByteArray(len)
-                    input.readFully(data)
-                    data
-                }
-            } catch (e: Exception) { null }
+        // NOTE: deliberately NOT under usbLock. The header+payload read blocks
+        // for the whole frame; if it held the shared lock, every transmit()
+        // would stall behind it (the latency/deadlock bug the WiFi-only code
+        // never hit). Only one thread ever reads, so it needs no lock at all.
+        return try {
+            val len = input.readInt() // big-endian
+            if (len <= 0 || len > 65535) null
+            else {
+                val data = ByteArray(len)
+                input.readFully(data)
+                data
+            }
+        } catch (e: Exception) {
+            if (e is java.io.IOException && running && usbSocket != null) {
+                failUsbTransport("USB bridge lost: ${e.message}")
+            }
+            null
         }
     }
 
@@ -505,17 +531,19 @@ class InputSender(private val context: Context) {
                     }
                 } catch (_: InterruptedException) { break }
                 catch (_: SocketException) {
-                    if (running) {
+                    if (running && !isUsbConnection) {
                         _errorCount++
                         Log.w(TAG, "Socket error on send #$_sendCount")
                         if (_errorCount <= 3) {
-                            // Re-open the losing socket on WiFi; USB re-connect
-                            // is handled by the user pressing Connect again.
+                            // Re-open the losing socket on WiFi only; USB
+                            // failure is handled by failUsbTransport().
                             try {
                                 udpSocket?.close()
                                 udpSocket = DatagramSocket().also { configureSocket(it) }
                             } catch (_: Exception) { }
                         }
+                    } else if (running) {
+                        failUsbTransport("Egress socket died")
                     }
                 } catch (e: Exception) {
                     if (running) {

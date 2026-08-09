@@ -159,7 +159,7 @@ public class MainForm : Form
         _input.OnMetaReceived += OnMetaReceived;
         _input.OnWidgetReceived += OnWidgetReceived;
 
-        _adbRunner = new AdbReverseRunner();
+        _adbRunner = new AdbReverseRunner(null, () => _input.IsUsbConnection);
         _adbRunner.OnLog += Log;
 
         _vJoy = new VJoyController();
@@ -309,8 +309,8 @@ public class MainForm : Form
         _navPillPanel.Controls.Add(_tabEditorBtn);
         _headerPanel.Controls.Add(_navPillPanel);
 
-        // Top Right Window Controls (â€” â–¡ âœ•)
-        _btnClose = CreateHeaderBtn("âœ•", Color.FromArgb(239, 68, 68));
+        // Top Right Window Controls (-, [], x)
+        _btnClose = CreateHeaderBtn("\u2715", Color.FromArgb(239, 68, 68)); // ✕
         _btnClose.Click += (_, _) => Close();
 
         _btnMax = CreateHeaderBtn("\uE922", TextMuted); // maximize glyph (Segoe MDL2)
@@ -320,7 +320,7 @@ public class MainForm : Form
             UpdateMaxBtnGlyph();
         };
 
-        _btnMin = CreateHeaderBtn("â€”", TextMuted);
+        _btnMin = CreateHeaderBtn("\u2014", TextMuted); // —
         _btnMin.Click += (_, _) => WindowState = FormWindowState.Minimized;
 
         _btnMax.Font = new Font("Segoe MDL2 Assets", 10f);
@@ -390,7 +390,7 @@ public class MainForm : Form
         // Sync Progress bar overlay label
         _lblSyncProgress = new Label
         {
-            Text = "Receiving current layout... [â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ] 100%",
+            Text = "Receiving current layout... [\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588] 100%",
             Font = new Font("Segoe UI", 10f, FontStyle.Bold),
             ForeColor = AccentGlow,
             BackColor = Color.FromArgb(16, 22, 38),
@@ -434,7 +434,7 @@ public class MainForm : Form
         });
         _dashboardView.Controls.Add(_connectedCard);
 
-        // USB Debugging Card â€” WiFi-free link over adb reverse
+        // USB Debugging Card - WiFi-free link over adb reverse
         _usbCard = new Panel { BackColor = BgCard };
         _usbCard.Paint += (s, pe) => DrawCardBorder(s, pe);
 
@@ -569,12 +569,12 @@ public class MainForm : Form
                 var loaded = HudLayoutManager.LoadLayout(_editorJsonBox.Text);
                 _currentLayoutJson = _editorJsonBox.Text;
                 _hudPreview.Widgets = loaded;
-                _editorStatusLabel.Text = "âœ“ Layout applied successfully!";
+                _editorStatusLabel.Text = "\u2713 Layout applied successfully!";
                 _editorStatusLabel.ForeColor = GreenDot;
             }
             catch (Exception ex)
             {
-                _editorStatusLabel.Text = $"âœ• Error: {ex.Message}";
+                _editorStatusLabel.Text = $"\u2715 Error: {ex.Message}";
                 _editorStatusLabel.ForeColor = Color.FromArgb(239, 68, 68);
             }
         };
@@ -595,7 +595,7 @@ public class MainForm : Form
             _currentLayoutJson = HudLayoutManager.DefaultLayoutJson;
             _editorJsonBox.Text = _currentLayoutJson;
             _hudPreview.Widgets = HudLayoutManager.LoadLayout(_currentLayoutJson);
-            _editorStatusLabel.Text = "âœ“ Reset to default layout!";
+            _editorStatusLabel.Text = "\u2713 Reset to default layout!";
             _editorStatusLabel.ForeColor = GreenDot;
         };
 
@@ -615,7 +615,7 @@ public class MainForm : Form
             try
             {
                 Clipboard.SetText(_editorJsonBox.Text);
-                _editorStatusLabel.Text = "âœ“ Copied to clipboard!";
+                _editorStatusLabel.Text = "\u2713 Copied to clipboard!";
                 _editorStatusLabel.ForeColor = GreenDot;
             }
             catch { }
@@ -641,6 +641,9 @@ public class MainForm : Form
         if (_adbRunner.Enabled)
         {
             _adbRunner.Disable();
+            // Tear down an existing USB session too — removing the adb reverse
+            // mapping alone leaves the accepted TCP connection alive.
+            _input.StopUsbSession();
             _btnUsbToggle.Text = "ENABLE USB";
             _btnUsbToggle.BackColor = AccentBlue;
             _lblUsbStatus.Text = "USB disabled. Press ENABLE to accept a phone over USB debugging.";
@@ -652,8 +655,8 @@ public class MainForm : Form
             _adbRunner.Enable();
             _btnUsbToggle.Text = "DISABLE USB";
             _btnUsbToggle.BackColor = Color.FromArgb(51, 65, 85);
-            _lblUsbStatus.Text = "USB enabled â€” run the phone's 'Connect USB' and accept the debugging prompt.";
-            Log("USB bridge enabled â€” adb reverse on localhost:" + OmniWheelPC.Network.Protocol.UsbBridgeTcpPort);
+            _lblUsbStatus.Text = "USB enabled — run the phone's 'Connect USB' and accept the debugging prompt.";
+            Log("USB bridge enabled — adb reverse on localhost:" + OmniWheelPC.Network.Protocol.UsbBridgeTcpPort);
         }
     }
 
@@ -715,6 +718,33 @@ public class MainForm : Form
     }
 
     /// <summary>
+    /// Strip the caption-related window styles so Windows/DWM can never draw a
+    /// title bar or caption strip over our custom header (the light-blue bar
+    /// seen on frameless forms). WS_BORDER/WS_DLGFRAME/WS_SYSMENU/WS_CAPTION all
+    /// go; resizing is handled entirely by WM_NCHITTEST, so WS_THICKFRAME is not
+    /// needed either (keeping it is what lets DWM paint the ghost caption).
+    /// </summary>
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.Style &= ~0x00C00000; // WS_CAPTION (WS_BORDER | WS_DLGFRAME)
+            cp.Style &= ~0x00800000; // WS_BORDER
+            cp.Style &= ~0x00040000; // WS_DLGFRAME
+            cp.Style &= ~0x00080000; // WS_SYSMENU
+            cp.Style &= ~0x00020000; // WS_MINIMIZEBOX
+            cp.Style &= ~0x00010000; // WS_MAXIMIZEBOX
+            cp.Style &= ~0x00040000; // WS_THICKFRAME (no native resize frame)
+            cp.ExStyle &= ~0x00000080; // WS_EX_DLGMODALFRAME
+            return cp;
+        }
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    /// <summary>
     /// Round the window corners so they match the app's soft card edges.
     /// DWM's rounded-corner attribute was abandoned: on Windows 11 it lets the
     /// shell draw a light caption/border strip at the top of the window. The
@@ -724,6 +754,13 @@ public class MainForm : Form
     private void ApplyRoundedCorners()
     {
         _dwmRounded = false;
+        // DWMWA_NCRENDERING_POLICY = 2, DWMNCRP_DISABLED = 1 — stop DWM from
+        // drawing ANY non-client chrome (caption glow, snap-adjusted border).
+        if (IsHandleCreated)
+        {
+            int disabled = 1;
+            DwmSetWindowAttribute(Handle, 2, ref disabled, sizeof(int));
+        }
         ApplyRoundedRegion();
     }
 
@@ -869,7 +906,7 @@ public class MainForm : Form
         // Push straight to the vJoy device on the receiver thread. This runs at
         // the real packet rate (hundreds of Hz) instead of the ~64Hz WinForms
         // WM_TIMER rate, so the game sees the same smooth, immediate axis
-        // updates the preview shows â€” no added wheel/gear lag.
+        // updates the preview shows - no added wheel/gear lag.
         if (_vJoy.IsAvailable)
             _vJoy.Update(_input.CurrentState);
     }
@@ -886,7 +923,7 @@ public class MainForm : Form
         _hudPreview.Widgets = new List<HudWidget>();
         _metaLogged = false;
         _syncProgressShown = false;
-        Log("Device connected â€” clearing preview, waiting for phone layout...");
+        Log("Device connected - clearing preview, waiting for phone layout...");
 
         // Ask the phone for its meta + full layout right now so the preview
         // fills in immediately instead of waiting for the phone's next
@@ -919,7 +956,7 @@ public class MainForm : Form
         if (!_metaLogged)
         {
             _metaLogged = true;
-            Log($"Synced from phone: {name} | battery {s.PhoneBatteryPercent}% | steering {s.PhoneMaxAngle}Â° | clutch {(s.ClutchEnabled ? "ON" : "OFF")} | {s.PhoneScreenWidthPx}x{s.PhoneScreenHeightPx}px");
+            Log($"Synced from phone: {name} | battery {s.PhoneBatteryPercent}% | steering {s.PhoneMaxAngle}\u00B0 | clutch {(s.ClutchEnabled ? "ON" : "OFF")} | {s.PhoneScreenWidthPx}x{s.PhoneScreenHeightPx}px");
         }
     }
 
@@ -997,7 +1034,7 @@ public class MainForm : Form
         // several times right after connecting, which used to flicker 5x).
         if (_syncProgressShown) return;
         _syncProgressShown = true;
-        _lblSyncProgress.Text = "Receiving current layout... [â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ] 100%";
+        _lblSyncProgress.Text = "Receiving current layout... [\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588] 100%";
         _lblSyncProgress.Visible = true;
         Task.Run(async () =>
         {
@@ -1026,8 +1063,8 @@ public class MainForm : Form
         if (_lblUsbList != null)
         {
             _lblUsbList.Text = _input.IsUsbConnection
-                ? "â— Connected over USB (adb reverse)"
-                : (_adbRunner.Enabled ? "Waiting for USB phoneâ€¦ unplug the cable or accept the prompt." : "");
+                ? "\u25CF Connected over USB (adb reverse)"
+                : (_adbRunner.Enabled ? "Waiting for USB phone\u2026 unplug the cable or accept the prompt." : "");
         }
 
         var now = DateTime.UtcNow;

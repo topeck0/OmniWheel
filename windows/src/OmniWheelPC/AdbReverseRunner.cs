@@ -6,21 +6,25 @@ using System.Threading;
 namespace OmniWheelPC.Network;
 
 /// <summary>
-/// Runs "adb reverse" so a phone connected via USB debugging can reach the
+/// Runs "adb reverse" so a phone connected via USB can reach the
 /// receiver over a localhost TCP port. adb reverse relays TCP only, so the
 /// USB path wraps each OW datagram in a length-prefixed frame and the phone
 /// dials 127.0.0.1:UsbBridgeTcpPort on its side.
 ///
-/// While USB is enabled the port mapping is re-issued every couple seconds,
-/// which makes the link recover automatically when the phone is unplugged and
-/// plugged back in (adb reverse is not persistent across reconnects).
+/// CRITICAL: we must NEVER run "adb reverse --remove" while a phone session
+/// is live — removing the mapping kills the established forwarded connection
+/// (the "broken pipe" + "USB device disconnected" after ~3s bug). The mapping
+/// is only removed on an explicit disable. While enabled we re-issue the
+/// reverse periodically, but only when no USB session is currently up, so
+/// unplug/replug recovery still works without tearing down an active link.
 /// </summary>
 public sealed class AdbReverseRunner : IDisposable
 {
     private const string AdbDefaultCandidates = "adb;platform-tools\\adb.exe;adb.exe";
 
     private readonly Func<string> _adbPathResolver;
-    private System.Threading.Timer? _cts;
+    private readonly Func<bool>? _isUsbSessionActive;
+    private System.Threading.Timer? _timer;
     private readonly object _lock = new();
     private bool _enabled;
     private bool _disposed;
@@ -28,9 +32,15 @@ public sealed class AdbReverseRunner : IDisposable
 
     public event Action<string>? OnLog;
 
-    public AdbReverseRunner(Func<string>? adbPathResolver = null)
+    /// <summary>
+    /// isUsbSessionActive should return true while the receiver currently has
+    /// a connected USB device — while true the mapping is left completely
+    /// untouched (no re-issue, no removal) so the tunnel never gets severed.
+    /// </summary>
+    public AdbReverseRunner(Func<string>? adbPathResolver = null, Func<bool>? isUsbSessionActive = null)
     {
         _adbPathResolver = adbPathResolver ?? (() => FindAdb());
+        _isUsbSessionActive = isUsbSessionActive;
     }
 
     public bool Enabled => _enabled;
@@ -92,8 +102,8 @@ public sealed class AdbReverseRunner : IDisposable
             _lastError = null;
             OnLog?.Invoke("USB enabled — setting up adb reverse on localhost:" + Protocol.UsbBridgeTcpPort);
         }
-        _cts?.Dispose();
-        _cts = new System.Threading.Timer(OnTick, null, 0, 3000);
+        _timer?.Dispose();
+        _timer = new System.Threading.Timer(OnTick, null, 0, 3000);
         // Run immediately.
         OnTick(null);
     }
@@ -101,8 +111,8 @@ public sealed class AdbReverseRunner : IDisposable
     public void Disable()
     {
         lock (_lock) _enabled = false;
-        _cts?.Dispose();
-        _cts = null;
+        _timer?.Dispose();
+        _timer = null;
         RunAdbReverse(remove: true);
         OnLog?.Invoke("USB disabled — adb reverse removed");
     }
@@ -112,6 +122,11 @@ public sealed class AdbReverseRunner : IDisposable
         bool enabled;
         lock (_lock) enabled = _enabled;
         if (!enabled) return;
+
+        // A live phone session owns the tunnel: touching the mapping here would
+        // sever the connection. Wait until the phone is gone to re-issue.
+        if (_isUsbSessionActive?.Invoke() == true) return;
+
         RunAdbReverse(remove: false);
     }
 
@@ -125,9 +140,16 @@ public sealed class AdbReverseRunner : IDisposable
         }
 
         var spec = "tcp:" + Protocol.UsbBridgeTcpPort;
-        // Clean any stale mapping, then (re)apply the reverse.
-        RunProcess(adb, "reverse --remove " + spec, ignoreFailure: true);
-        if (remove) return;
+        if (remove)
+        {
+            // Explicit disable (or shutdown) only. Never in the tick loop.
+            RunProcess(adb, "reverse --remove " + spec, ignoreFailure: true);
+            return;
+        }
+
+        // (Re)apply without removing first: if the mapping already exists this
+        // is a harmless no-op; once a phone unplugs and replugs, the next tick
+        // after the session drops will recreate it.
         RunProcess(adb, "reverse " + spec + " " + spec, ignoreFailure: false);
         // Make sure at least one device is being watched — surfaced in log once.
         RunProcess(adb, "devices", ignoreFailure: true);
