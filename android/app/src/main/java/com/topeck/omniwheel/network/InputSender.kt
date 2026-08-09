@@ -340,24 +340,21 @@ class InputSender(private val context: Context) {
                                 curGyroX, curGyroY, curGyroZ,
                                 curButtons, includeGyro = curGyro
                             )
-                            // Primary send
-                            sendPacket?.let { sp ->
-                                System.arraycopy(packet, 0, sp.data, 0, packet.size)
-                                sp.length = packet.size
-                                udpSocket?.send(sp)
+                            // CHANGE packets (steering sweep / pedal / clutch /
+                            // button tap) are the ones that must not be lost —
+                            // a dropped gear-button press is the difference
+                            // between a shift and a destroyed gearbox. Send them
+                            // 4x back-to-back. Unchanged keep-alives go 2x.
+                            val copies = if (changed) 4 else 2
+                            for (c in 0 until copies) {
+                                (if (c == 0) sendPacket else dupPacket)?.let { dp ->
+                                    System.arraycopy(packet, 0, dp.data, 0, packet.size)
+                                    dp.length = packet.size
+                                    udpSocket?.send(dp)
+                                }
                             }
                             _sendCount++
-
-                            // REDUNDANT SEND on EVERY packet, not just on change.
-                            // Each state update goes out twice back-to-back so a
-                            // single dropped UDP datagram can never delay the
-                            // steering — even on a congested/lossy router.
-                            dupPacket?.let { dp ->
-                                System.arraycopy(packet, 0, dp.data, 0, packet.size)
-                                dp.length = packet.size
-                                udpSocket?.send(dp)
-                            }
-                            _dupCount++
+                            _dupCount += copies - 1
 
                             if (forceSend) lastForceSendTime = nowMs
 

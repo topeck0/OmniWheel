@@ -92,7 +92,7 @@ fun ConnectionScreen(
                     color = Color(0xFF6366F1)
                 )
                 Text(
-                    text = "v0.9.11  |  Phone-as-Steering-Wheel",
+                    text = "v0.9.12  |  Phone-as-Steering-Wheel",
                     fontSize = 12.sp,
                     color = Color(0xFF555555)
                 )
