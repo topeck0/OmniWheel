@@ -3,7 +3,14 @@ package com.topeck.omniwheel.network
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.util.Log
-import java.net.*
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import kotlin.concurrent.thread
 
 /**
@@ -18,6 +25,9 @@ import kotlin.concurrent.thread
  * - Pre-allocated reusable buffers (zero GC pressure)
  * - WiFi HIGH_PERF lock
  * - Fast connect: 3 probes @ 80ms + 2s ACK wait
+ *
+ * USB debugging mode (adb reverse): the same packets ride a persistent TCP
+ * connection to 127.0.0.1:USB_BRIDGE_PORT as [4-byte BE length][data] frames.
  */
 class InputSender(private val context: Context) {
     companion object {
@@ -35,8 +45,12 @@ class InputSender(private val context: Context) {
     private var heartbeatThread: Thread? = null
     private var receiveThread: Thread? = null
     private var wifiLock: WifiManager.WifiLock? = null
-    private var sendPacket: DatagramPacket? = null
-    private var dupPacket: DatagramPacket? = null // duplicate for redundancy
+
+    // USB (adb reverse) transport
+    private var usbSocket: Socket? = null
+    private var usbOut: DataOutputStream? = null
+    private var usbIn: DataInputStream? = null
+    private val usbLock = Any()
 
     /** Invoked on the receiver thread when the PC asks us to resend the layout. */
     @Volatile var onResyncRequested: (() -> Unit)? = null
@@ -76,34 +90,96 @@ class InputSender(private val context: Context) {
 
     private fun updateLayoutLabel() {
         layoutSyncInfo = timeFmt.format(System.currentTimeMillis()) +
-            " · ${widgetPacketsSent} widgets · FULL ${fullLayoutBurstsSent}x"
+            " \u00b7 ${widgetPacketsSent} widgets \u00b7 FULL ${fullLayoutBurstsSent}x"
     }
 
+    // ================= TRANSPORT ABSTRACTION =================
+
+    /** True once connected over the USB debugging bridge instead of WiFi. */
+    @Volatile var isUsbConnection: Boolean = false
+        private set
+
+    /** Send one full OW packet over whichever transport is active. */
+    private fun transmit(pkt: ByteArray) {
+        val sock = udpSocket
+        if (sock != null) {
+            try {
+                val addr = InetSocketAddress(targetIp, targetPort)
+                sock.send(DatagramPacket(pkt, pkt.size, addr))
+            } catch (e: Exception) {
+                if (running) {
+                    layoutSyncInfo = "send error: ${e.message}"
+                    Log.w(TAG, "send: ${e.message}")
+                }
+            }
+            return
+        }
+        // USB path
+        synchronized(usbLock) {
+            val out = usbOut ?: return
+            try {
+                out.writeInt(pkt.size) // big-endian
+                out.write(pkt)
+                out.flush()
+            } catch (e: Exception) {
+                if (running) layoutSyncInfo = "usb send error: ${e.message}"
+            }
+        }
+    }
+
+    /** Receive one packet (UDP datagram or USB frame), null when shutting down. */
+    private fun receivePacket(): ByteArray? {
+        val sock = udpSocket
+        if (sock != null) {
+            return try {
+                val buf = ByteArray(512)
+                val pkt = DatagramPacket(buf, buf.size)
+                sock.receive(pkt)
+                buf.copyOfRange(0, pkt.length)
+            } catch (e: Exception) { null }
+        }
+        val input = usbIn ?: return null
+        return synchronized(usbLock) {
+            try {
+                val len = input.readInt() // big-endian
+                if (len <= 0 || len > 65535) null
+                else {
+                    val data = ByteArray(len)
+                    input.readFully(data)
+                    data
+                }
+            } catch (e: Exception) { null }
+        }
+    }
+
+    // ================= META / HUD =================
+
     fun sendMetaPacket() {
-        val sock = udpSocket ?: return
-        val addr = try { InetSocketAddress(targetIp, Protocol.INPUT_PORT) } catch (e: Exception) { return }
+        val sock = udpSocket
+        val out = usbOut
+        if (sock == null && out == null) return
         try {
             val pkt = Protocol.buildMetaPacket(
                 metaBatteryPercent, metaMaxAngle,
                 metaScreenWidthPx, metaScreenHeightPx,
                 metaDeviceType, metaClutchEnabled
             )
-            sock.send(DatagramPacket(pkt, pkt.size, addr))
+            transmit(pkt)
         } catch (e: Exception) {
             layoutSyncInfo = "META error: ${e.message}"
-            if (_errorCount <= 3) Log.w(TAG, "Meta send: ${e.message}")
         }
     }
 
     /**
      * Send HUD layout widgets to the receiver. EVERY widget is sent on every
-     * call so a single lost UDP packet can never leave the PC preview stale or
-     * missing an element. Widgets that no longer exist are announced as
-     * removals so the PC drops them too.
+     * call so a single lost UDP packet can never leave the client preview stale
+     * or missing an element. Widgets that no longer exist are announced as
+     * removals so the client drops them too.
      */
     fun syncLayout(widgetJsons: List<String>) {
-        val sock = udpSocket ?: return
-        val addr = try { InetSocketAddress(targetIp, Protocol.INPUT_PORT) } catch (e: Exception) { return }
+        val sock = udpSocket
+        val out = usbOut
+        if (sock == null && out == null) return
         val currentIds = HashSet<String>()
         synchronized(metaLock) {
             for (json in widgetJsons) {
@@ -112,7 +188,7 @@ class InputSender(private val context: Context) {
                 currentIds.add(id)
                 try {
                     val pkt = Protocol.buildPacket(Protocol.TYPE_HUD_WIDGET, json.toByteArray(Charsets.UTF_8))
-                    sock.send(DatagramPacket(pkt, pkt.size, addr))
+                    transmit(pkt)
                 } catch (e: Exception) {
                     layoutSyncInfo = "Widget error: ${e.message}"
                     Log.w(TAG, "Widget send: ${e.message}")
@@ -125,7 +201,7 @@ class InputSender(private val context: Context) {
                 try {
                     val json = "{\"id\":\"$id\",\"remove\":true}"
                     val pkt = Protocol.buildPacket(Protocol.TYPE_HUD_WIDGET, json.toByteArray(Charsets.UTF_8))
-                    sock.send(DatagramPacket(pkt, pkt.size, addr))
+                    transmit(pkt)
                 } catch (e: Exception) { }
                 sentWidgetJson.remove(id)
             }
@@ -135,16 +211,17 @@ class InputSender(private val context: Context) {
     }
 
     /**
-     * Send the entire layout as chained chunks. The receiver replaces its whole
-     * widget list, which authoritatively handles deletions and any dropped
+     * Send the entire layout as chained chunks. The client replaces its whole
+     * layout list, which authoritatively handles deletions and any dropped
      * per-widget packets.
      */
     fun sendFullLayout(fullJson: String) {
-        val sock = udpSocket ?: return
-        val addr = try { InetSocketAddress(targetIp, Protocol.INPUT_PORT) } catch (e: Exception) { return }
+        val sock = udpSocket
+        val out = usbOut
+        if (sock == null && out == null) return
         try {
             for (pkt in Protocol.buildFullLayoutPackets(fullJson)) {
-                sock.send(DatagramPacket(pkt, pkt.size, addr))
+                transmit(pkt)
             }
             fullLayoutBurstsSent++
             updateLayoutLabel()
@@ -266,10 +343,6 @@ class InputSender(private val context: Context) {
                     setState(State.CONNECTED)
                     onLog?.invoke("Sending at ${sendRateHz}Hz (aggressive + redundant)")
 
-                    val addr = InetSocketAddress(targetIp, targetPort)
-                    sendPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
-                    dupPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
-
                     startSendLoop()
                     startHeartbeat()
                     startReceiveLoop()
@@ -291,6 +364,59 @@ class InputSender(private val context: Context) {
             setState(State.DISCONNECTED)
             onError?.invoke(msg)
             cleanup()
+        }
+    }
+
+    /**
+     * Connect over USB debugging (adb reverse). The PC that pressed "ENABLE USB"
+     * runs `adb reverse tcp:19710 tcp:19710`, so connecting to 127.0.0.1 flows
+     * straight into its TCP bridge. Each packet is exchanged as a length-prefixed
+     * frame. No WiFi lock needed — USB is already low-latency and wired.
+     */
+    fun connectUsb(onReady: () -> Unit, onError: ((String) -> Unit)? = null) {
+        stopInternal()
+        targetIp = "127.0.0.1"
+
+        running = true
+        _sendCount = 0
+        _skipCount = 0
+        _dupCount = 0
+        _errorCount = 0
+        synchronized(metaLock) { sentWidgetJson.clear() }
+        setState(State.CONNECTING)
+        onLog?.invoke("USB connect: opening 127.0.0.1:${Protocol.USB_BRIDGE_PORT}...")
+
+        thread(name = "UsbConnector") {
+            try {
+                val socket = Socket()
+                socket.tcpNoDelay = true
+                socket.connect(InetSocketAddress("127.0.0.1", Protocol.USB_BRIDGE_PORT), 5000)
+                usbSocket = socket
+                usbOut = DataOutputStream(socket.getOutputStream())
+                usbIn = DataInputStream(socket.getInputStream())
+                isUsbConnection = true
+
+                // Send a CONNECT so the client sends back an ACK and knows our
+                // layout resync request arrives immediately.
+                transmit(Protocol.buildPacket(Protocol.TYPE_CONNECT))
+                setState(State.CONNECTED)
+                onLog?.invoke("USB bridge connected (adb reverse)")
+
+                startSendLoop()
+                startHeartbeat()
+                startReceiveLoop()
+                onReady()
+
+            } catch (_: InterruptedException) { /* cancelled */ }
+            catch (e: Exception) {
+                val msg = "USB connect failed: ${e.message}"
+                onLog?.invoke(msg)
+                Log.e(TAG, msg, e)
+                isUsbConnection = false
+                stopInternal()
+                setState(State.DISCONNECTED)
+                onError?.invoke(e.message ?: "Unknown error")
+            }
         }
     }
 
@@ -344,14 +470,11 @@ class InputSender(private val context: Context) {
                             // button tap) are the ones that must not be lost —
                             // a dropped gear-button press is the difference
                             // between a shift and a destroyed gearbox. Send them
-                            // 4x back-to-back. Unchanged keep-alives go 2x.
-                            val copies = if (changed) 4 else 2
+                            // 4x back-to-back on WiFi. Over the wired USB TCP
+                            // bridge one copy is already reliable.
+                            val copies = if (usbSocket != null) 1 else if (changed) 4 else 2
                             for (c in 0 until copies) {
-                                (if (c == 0) sendPacket else dupPacket)?.let { dp ->
-                                    System.arraycopy(packet, 0, dp.data, 0, packet.size)
-                                    dp.length = packet.size
-                                    udpSocket?.send(dp)
-                                }
+                                transmit(packet)
                             }
                             _sendCount++
                             _dupCount += copies - 1
@@ -381,21 +504,17 @@ class InputSender(private val context: Context) {
                         }
                     }
                 } catch (_: InterruptedException) { break }
-                catch (e: SocketException) {
+                catch (_: SocketException) {
                     if (running) {
                         _errorCount++
-                        Log.w(TAG, "Socket error on send #$_sendCount: ${e.message}")
-                        if (_errorCount <= 3) onLog?.invoke("Socket error: ${e.message}")
-                        try {
-                            udpSocket?.close()
-                            udpSocket = DatagramSocket().also { configureSocket(it) }
-                            val addr = InetSocketAddress(targetIp, targetPort)
-                            sendPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
-                            dupPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
-                            onLog?.invoke("Socket recreated after error")
-                        } catch (re: Exception) {
-                            onLog?.invoke("Cannot recreate socket: ${re.message}")
-                            break
+                        Log.w(TAG, "Socket error on send #$_sendCount")
+                        if (_errorCount <= 3) {
+                            // Re-open the losing socket on WiFi; USB re-connect
+                            // is handled by the user pressing Connect again.
+                            try {
+                                udpSocket?.close()
+                                udpSocket = DatagramSocket().also { configureSocket(it) }
+                            } catch (_: Exception) { }
                         }
                     }
                 } catch (e: Exception) {
@@ -414,10 +533,8 @@ class InputSender(private val context: Context) {
             while (running) {
                 try {
                     Thread.sleep(3000)
-                    if (running && udpSocket != null) {
-                        val hb = Protocol.buildHeartbeatPacket()
-                        val addr = InetSocketAddress(targetIp, Protocol.INPUT_PORT)
-                        udpSocket?.send(DatagramPacket(hb, hb.size, addr))
+                    if (running) {
+                        transmit(Protocol.buildHeartbeatPacket())
                     }
                 } catch (_: InterruptedException) { break }
                 catch (e: Exception) {
@@ -428,37 +545,34 @@ class InputSender(private val context: Context) {
     }
 
     /**
-     * Persistent listener on the same socket. Reacts to PC requests so the
-     * receiver never depends on a specific connect/disconnect order:
-     * - PING (0x09): echo it back as PONG with the payload untouched so the PC
-     *   can measure a clock-skew-proof RTT latency.
-     * - CONNECT (0x03): the PC just opened/needs the layout — resend it now.
+     * Persistent listener on the same transport. Reacts to client requests so
+     * the receiver never depends on a specific connect/disconnect order:
+     * - PING (0x09): echo it back as PONG with the payload untouched so the
+     *   client can measure a clock-skew-proof RTT latency.
+     * - CONNECT (0x03): the client just opened/needs the layout — resend it now.
      */
     private fun startReceiveLoop() {
         receiveThread = thread(name = "InputReceiver") {
             val buf = ByteArray(512)
             while (running) {
                 try {
-                    val pkt = DatagramPacket(buf, buf.size)
-                    udpSocket?.receive(pkt)
-                    val data = buf.copyOfRange(0, pkt.length)
+                    val data = receivePacket() ?: break
                     val header = Protocol.parseHeader(data) ?: continue
                     when (header.type) {
                         Protocol.TYPE_PING -> {
                             if (data.size > Protocol.HEADER_SIZE + Protocol.CRC_SIZE) {
                                 val echo = data.copyOfRange(Protocol.HEADER_SIZE, data.size - Protocol.CRC_SIZE)
                                 val pong = Protocol.buildPacket(Protocol.TYPE_PONG, echo)
-                                val sender = InetSocketAddress(pkt.address, pkt.port)
-                                udpSocket?.send(DatagramPacket(pong, pong.size, sender))
+                                transmit(pong)
                             }
                         }
                         Protocol.TYPE_CONNECT -> {
-                            onLog?.invoke("PC requested layout resync")
+                            onLog?.invoke("Client requested layout resync")
                             onResyncRequested?.invoke()
                         }
                     }
                 } catch (_: InterruptedException) { break }
-                catch (_: SocketException) { if (!running) break }
+                catch (_: SocketException) { if (!running && usbSocket == null) break }
                 catch (e: Exception) {
                     if (running) onLog?.invoke("Receive error: ${e.message}")
                 }
@@ -492,10 +606,6 @@ class InputSender(private val context: Context) {
             setState(State.CONNECTED)
             onLog?.invoke("Direct connect to $targetIp (aggressive, no handshake)")
 
-            val addr = InetSocketAddress(targetIp, targetPort)
-            sendPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
-            dupPacket = DatagramPacket(ByteArray(MAX_PACKET_SIZE), MAX_PACKET_SIZE, addr)
-
             startSendLoop()
             startHeartbeat()
             startReceiveLoop()
@@ -511,15 +621,18 @@ class InputSender(private val context: Context) {
     }
 
     fun disconnect() {
-        if (running && udpSocket != null) {
+        if (running) {
             try {
                 val zeroPacket = Protocol.buildInputPacket(
                     steering = 0, throttle = 0, brake = 0, clutch = 0,
                     activeButtons = emptySet()
                 )
-                val addr = InetSocketAddress(targetIp, targetPort)
-                repeat(5) { // send 5 times to guarantee arrival
-                    udpSocket?.send(DatagramPacket(zeroPacket, zeroPacket.size, addr))
+                val sock = udpSocket
+                if (sock != null) {
+                    val addr = InetSocketAddress(targetIp, targetPort)
+                    repeat(5) { // send 5 times to guarantee arrival
+                        sock.send(DatagramPacket(zeroPacket, zeroPacket.size, addr))
+                    }
                 }
             } catch (_: Exception) {}
         }
@@ -536,8 +649,11 @@ class InputSender(private val context: Context) {
         sendThread = null
         heartbeatThread = null
         receiveThread = null
-        sendPacket = null
-        dupPacket = null
+        try { usbSocket?.close() } catch (_: Exception) {}
+        usbSocket = null
+        usbOut = null
+        usbIn = null
+        isUsbConnection = false
         cleanup()
     }
 

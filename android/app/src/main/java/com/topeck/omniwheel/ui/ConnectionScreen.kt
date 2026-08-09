@@ -1,5 +1,6 @@
 package com.topeck.omniwheel.ui
 
+import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -18,9 +19,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.topeck.omniwheel.SettingsManager
@@ -44,6 +47,16 @@ fun ConnectionScreen(
     // Manual IP entry — pre-filled from last used IP
     var manualIp by remember { mutableStateOf(settings.lastUsedIp) }
     var isDirectConnecting by remember { mutableStateOf(false) }
+    var usbConnecting by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    // Is USB debugging enabled on this device? (0 = disabled)
+    val adbEnabled = remember {
+        try {
+            Settings.Secure.getInt(context.contentResolver, Settings.Secure.ADB_ENABLED, 0) == 1
+        } catch (e: Exception) { false }
+    }
 
     LaunchedEffect(Unit) {
         discovery.onDeviceFound = { device ->
@@ -92,7 +105,7 @@ fun ConnectionScreen(
                     color = Color(0xFF6366F1)
                 )
                 Text(
-                    text = "v0.9.12  |  Phone-as-Steering-Wheel",
+                    text = "v0.9.13  |  Phone-as-Steering-Wheel",
                     fontSize = 12.sp,
                     color = Color(0xFF555555)
                 )
@@ -289,20 +302,135 @@ fun ConnectionScreen(
 
         Spacer(Modifier.height(8.dp))
 
-        // HUD Editor Button
-        Button(
-            onClick = { onOpenHudEditor() },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E36)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            shape = MaterialTheme.shapes.medium
+        // Two equal buttons: Connect USB (left) and HUD Editor (right) — the
+        // home screen keeps the layout editor but shares the space with the new
+        // USB debugging connection path.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = "HUD Editor",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF00E5FF)
+            // ---- Connect USB ----
+            Button(
+                onClick = {
+                    showHelp = !adbEnabled
+                    if (adbEnabled) {
+                        usbConnecting = true
+                        errorMsg = null
+                        inputSender.disconnect()
+                        inputSender.connectUsb(
+                            onReady = {
+                                usbConnecting = false
+                                onConnected("USB")
+                            },
+                            onError = { err ->
+                                usbConnecting = false
+                                errorMsg = err
+                            }
+                        )
+                    }
+                },
+                enabled = !usbConnecting,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (adbEnabled) Color(0xFF059669) else Color(0xFF34347A),
+                    disabledContainerColor = Color(0xFF1E1E36)
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(64.dp),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Text(
+                        text = if (usbConnecting) "..." else "\uD83D\uDD0C",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (usbConnecting) "Connecting..." else "Connect USB",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (adbEnabled) "USB debugging ON" else "USB debugging OFF",
+                        fontSize = 9.sp,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+            }
+
+            // ---- HUD Editor (half) ----
+            Button(
+                onClick = { onOpenHudEditor() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E36)),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(64.dp),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Text(
+                        text = "\uD83D\uDCA0",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF00E5FF)
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "HUD Editor",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF00E5FF)
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "layout & buttons",
+                        fontSize = 9.sp,
+                        color = Color(0xFF00E5FF).copy(alpha = 0.7f)
+                    )
+                }
+            }
+        }
+
+        // USB instructions dialog — shown when the user taps Connect USB while
+        // USB debugging is still off on their phone.
+        if (showHelp) {
+            AlertDialog(
+                onDismissRequest = { showHelp = false },
+                title = { Text("Enable USB debugging", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("1. Open Settings → System → About phone", fontSize = 13.sp, color = Color(0xFFE0E0E0))
+                        Text("2. Tap \u201CBuild number\u201D 7 times", fontSize = 13.sp, color = Color(0xFFE0E0E0))
+                        Text("    until \u201CYou are now a developer!\u201D", fontSize = 11.sp, color = Color(0xFF777777))
+                        Text("3. Back → go to Developer options", fontSize = 13.sp, color = Color(0xFFE0E0E0))
+                        Text("4. Switch on \u201CUSB debugging\u201D", fontSize = 13.sp, color = Color(0xFFE0E0E0))
+                        Text("5. Plug the cable into this PC, press ENABLE USB there,\n   then accept the \u201CAllow USB debugging?\u201D prompt.", fontSize = 13.sp, color = Color(0xFFE0E0E0))
+                        Text("Note: settings names vary by brand — check the exact wording on your phone.", fontSize = 11.sp, color = Color(0xFF777777))
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showHelp = false
+                        usbConnecting = true
+                        errorMsg = null
+                        inputSender.disconnect()
+                        inputSender.connectUsb(
+                            onReady = {
+                                usbConnecting = false
+                                onConnected("USB")
+                            },
+                            onError = { err ->
+                                usbConnecting = false
+                                errorMsg = "Could not reach the PC over USB.\nCheck that:\n1) USB debugging is ON\n2) The PC receiver has ENABLE USB pressed\n3) The cable is plugged in\n\nDetail: $err"
+                            }
+                        )
+                    }) { Text("I enabled it — Connect") }
+                },
+                dismissButton = { TextButton(onClick = { showHelp = false }) { Text("Cancel") } }
             )
         }
     }

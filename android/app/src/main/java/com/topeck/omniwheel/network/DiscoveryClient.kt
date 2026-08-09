@@ -64,7 +64,11 @@ class DiscoveryClient(private val context: Context) {
             for (i in 0 until 3) {
                 if (!running) return@thread
                 try { sendDiscover() } catch (e: Exception) { }
-                Thread.sleep(250)
+                try {
+                    Thread.sleep(250)
+                } catch (_: InterruptedException) {
+                    break
+                }
             }
             while (running) {
                 try {
@@ -73,7 +77,9 @@ class DiscoveryClient(private val context: Context) {
                 } catch (_: InterruptedException) { break }
                 catch (e: Exception) {
                     onLog?.invoke("Discovery send error: ${e.message}")
-                    Thread.sleep(2000)
+                    try {
+                        Thread.sleep(2000)
+                    } catch (_: InterruptedException) { break }
                 }
             }
         }

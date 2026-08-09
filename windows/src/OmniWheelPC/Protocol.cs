@@ -14,6 +14,11 @@ public static class Protocol
     public const int InputPort = 19701;
     public const int ControlPort = 19702;
 
+    // USB debugging bridge: the phone opens a TCP connection to us over adb
+    // reverse and we carry each OmniWheel datagram as a length-prefixed frame.
+    // adb reverse can only relay TCP, hence this second transport.
+    public const int UsbBridgeTcpPort = 19710;
+
     // v2 header size
     public const int HeaderSizeV2 = 8;
     // v1 header size (legacy)

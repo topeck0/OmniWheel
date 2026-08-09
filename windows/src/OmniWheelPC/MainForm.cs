@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -98,6 +98,17 @@ public class MainForm : Form
     private PingGraphControl _pingGraph = null!;
     private Label _lblSteeringRange = null!;
 
+    // USB debugging bridge (adb reverse)
+    private Panel _usbCard = null!;
+    private Button _btnUsbToggle = null!;
+    private Label _lblUsbStatus = null!;
+    private Label _lblUsbList = null!;
+    private readonly AdbReverseRunner _adbRunner;
+
+    // Local IPv4 list shown on the connected card
+    private Label _lblLanIp = null!;
+    private DateTime _lastIpRefreshUtc;
+
     // Terminal Log Box
     private TextBox _logBox = null!;
 
@@ -148,6 +159,9 @@ public class MainForm : Form
         _input.OnMetaReceived += OnMetaReceived;
         _input.OnWidgetReceived += OnWidgetReceived;
 
+        _adbRunner = new AdbReverseRunner();
+        _adbRunner.OnLog += Log;
+
         _vJoy = new VJoyController();
         _vJoy.OnLog += Log;
 
@@ -169,7 +183,7 @@ public class MainForm : Form
             _discovery.Start();
             _input.Start();
             _uiTimer.Start();
-            Log("OmniWheel PC v0.9.12 started");
+            Log("OmniWheel PC v0.9.13 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
@@ -237,7 +251,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.12",
+            Text = "OmniWheel v0.9.13",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -295,8 +309,8 @@ public class MainForm : Form
         _navPillPanel.Controls.Add(_tabEditorBtn);
         _headerPanel.Controls.Add(_navPillPanel);
 
-        // Top Right Window Controls (— □ ✕)
-        _btnClose = CreateHeaderBtn("✕", Color.FromArgb(239, 68, 68));
+        // Top Right Window Controls (â€” â–¡ âœ•)
+        _btnClose = CreateHeaderBtn("âœ•", Color.FromArgb(239, 68, 68));
         _btnClose.Click += (_, _) => Close();
 
         _btnMax = CreateHeaderBtn("\uE922", TextMuted); // maximize glyph (Segoe MDL2)
@@ -306,7 +320,7 @@ public class MainForm : Form
             UpdateMaxBtnGlyph();
         };
 
-        _btnMin = CreateHeaderBtn("—", TextMuted);
+        _btnMin = CreateHeaderBtn("â€”", TextMuted);
         _btnMin.Click += (_, _) => WindowState = FormWindowState.Minimized;
 
         _btnMax.Font = new Font("Segoe MDL2 Assets", 10f);
@@ -376,7 +390,7 @@ public class MainForm : Form
         // Sync Progress bar overlay label
         _lblSyncProgress = new Label
         {
-            Text = "Receiving current layout... [██████████] 100%",
+            Text = "Receiving current layout... [â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ] 100%",
             Font = new Font("Segoe UI", 10f, FontStyle.Bold),
             ForeColor = AccentGlow,
             BackColor = Color.FromArgb(16, 22, 38),
@@ -407,14 +421,69 @@ public class MainForm : Form
         _lblPing = CreateCardInfoLabel("Current ping: -- ms", 16, 116);
         _pingGraph = new PingGraphControl { Size = new Size(90, 24), Location = new Point(165, 114) };
 
+        _lblPing = CreateCardInfoLabel("Current ping: -- ms", 16, 116);
+        _pingGraph = new PingGraphControl { Size = new Size(90, 24), Location = new Point(165, 114) };
+
         _lblSteeringRange = CreateCardInfoLabel("Steering range: 900 degree", 16, 144);
+        _lblLanIp = CreateCardInfoLabel("LAN IPs: --", 16, 168);
 
         _connectedCard.Controls.AddRange(new Control[]
         {
             _connHeaderLabel, _lblDeviceName, _lblPhoneIp,
-            _lblBattery, _lblPing, _pingGraph, _lblSteeringRange
+            _lblBattery, _lblPing, _pingGraph, _lblSteeringRange, _lblLanIp
         });
         _dashboardView.Controls.Add(_connectedCard);
+
+        // USB Debugging Card â€” WiFi-free link over adb reverse
+        _usbCard = new Panel { BackColor = BgCard };
+        _usbCard.Paint += (s, pe) => DrawCardBorder(s, pe);
+
+        var usbTitle = new Label
+        {
+            Text = "USB Connection (adb reverse)",
+            Font = FntCardTitle,
+            ForeColor = TextWhite,
+            AutoSize = true,
+            Location = new Point(16, 12)
+        };
+
+        _btnUsbToggle = new Button
+        {
+            Text = "ENABLE USB",
+            Font = FntNav,
+            ForeColor = TextWhite,
+            BackColor = AccentBlue,
+            FlatStyle = FlatStyle.Flat,
+            Size = new Size(120, 34),
+            Cursor = Cursors.Hand,
+            Location = new Point(16, 40)
+        };
+        _btnUsbToggle.FlatAppearance.BorderSize = 0;
+        _btnUsbToggle.Click += (_, _) => ToggleUsb();
+
+        _lblUsbStatus = new Label
+        {
+            Text = "Press ENABLE to accept a phone over USB debugging.",
+            Font = FntInfo,
+            ForeColor = TextMuted,
+            AutoSize = true,
+            Location = new Point(16, 86)
+        };
+
+        _lblUsbList = new Label
+        {
+            Text = "",
+            Font = FntInfo,
+            ForeColor = TextDim,
+            AutoSize = true,
+            Location = new Point(16, 106)
+        };
+
+        _usbCard.Controls.AddRange(new Control[]
+        {
+            usbTitle, _btnUsbToggle, _lblUsbStatus, _lblUsbList
+        });
+        _dashboardView.Controls.Add(_usbCard);
 
         // Terminal Log Card
         _logCard = new Panel { BackColor = BgCard };
@@ -500,12 +569,12 @@ public class MainForm : Form
                 var loaded = HudLayoutManager.LoadLayout(_editorJsonBox.Text);
                 _currentLayoutJson = _editorJsonBox.Text;
                 _hudPreview.Widgets = loaded;
-                _editorStatusLabel.Text = "✓ Layout applied successfully!";
+                _editorStatusLabel.Text = "âœ“ Layout applied successfully!";
                 _editorStatusLabel.ForeColor = GreenDot;
             }
             catch (Exception ex)
             {
-                _editorStatusLabel.Text = $"✕ Error: {ex.Message}";
+                _editorStatusLabel.Text = $"âœ• Error: {ex.Message}";
                 _editorStatusLabel.ForeColor = Color.FromArgb(239, 68, 68);
             }
         };
@@ -526,7 +595,7 @@ public class MainForm : Form
             _currentLayoutJson = HudLayoutManager.DefaultLayoutJson;
             _editorJsonBox.Text = _currentLayoutJson;
             _hudPreview.Widgets = HudLayoutManager.LoadLayout(_currentLayoutJson);
-            _editorStatusLabel.Text = "✓ Reset to default layout!";
+            _editorStatusLabel.Text = "âœ“ Reset to default layout!";
             _editorStatusLabel.ForeColor = GreenDot;
         };
 
@@ -546,7 +615,7 @@ public class MainForm : Form
             try
             {
                 Clipboard.SetText(_editorJsonBox.Text);
-                _editorStatusLabel.Text = "✓ Copied to clipboard!";
+                _editorStatusLabel.Text = "âœ“ Copied to clipboard!";
                 _editorStatusLabel.ForeColor = GreenDot;
             }
             catch { }
@@ -565,6 +634,27 @@ public class MainForm : Form
             lblTitle, lblSub, _editorJsonBox,
             _btnApplyJson, _btnResetJson, _btnCopyJson, _editorStatusLabel
         });
+    }
+
+    private void ToggleUsb()
+    {
+        if (_adbRunner.Enabled)
+        {
+            _adbRunner.Disable();
+            _btnUsbToggle.Text = "ENABLE USB";
+            _btnUsbToggle.BackColor = AccentBlue;
+            _lblUsbStatus.Text = "USB disabled. Press ENABLE to accept a phone over USB debugging.";
+            _lblUsbList.Text = "";
+            Log("USB bridge disabled");
+        }
+        else
+        {
+            _adbRunner.Enable();
+            _btnUsbToggle.Text = "DISABLE USB";
+            _btnUsbToggle.BackColor = Color.FromArgb(51, 65, 85);
+            _lblUsbStatus.Text = "USB enabled â€” run the phone's 'Connect USB' and accept the debugging prompt.";
+            Log("USB bridge enabled â€” adb reverse on localhost:" + OmniWheelPC.Network.Protocol.UsbBridgeTcpPort);
+        }
     }
 
     private void SwitchTab(bool isDashboard)
@@ -745,9 +835,14 @@ public class MainForm : Form
         _lblSyncProgress.Bounds = new Rectangle(20, 48 + _hudPreview.Height - 36, leftW, 32);
 
         int rightX = 20 + leftW + 16;
-        _connectedCard.Bounds = new Rectangle(rightX, 48, rightW, 182);
+        _connectedCard.Bounds = new Rectangle(rightX, 48, rightW, 196);
 
-        int logY = 48 + 182 + 16;
+        // USB Card between connected card and log card
+        int usbY = 48 + 196 + 16;
+        int usbH = 120;
+        _usbCard.Bounds = new Rectangle(rightX, usbY, rightW, usbH);
+
+        int logY = usbY + usbH + 16;
         int logH = contentH - logY + 20;
         _logCard.Bounds = new Rectangle(rightX, logY, rightW, Math.Max(100, logH));
         _logBox.Size = new Size(rightW - 24, Math.Max(80, logH - 24));
@@ -774,7 +869,7 @@ public class MainForm : Form
         // Push straight to the vJoy device on the receiver thread. This runs at
         // the real packet rate (hundreds of Hz) instead of the ~64Hz WinForms
         // WM_TIMER rate, so the game sees the same smooth, immediate axis
-        // updates the preview shows — no added wheel/gear lag.
+        // updates the preview shows â€” no added wheel/gear lag.
         if (_vJoy.IsAvailable)
             _vJoy.Update(_input.CurrentState);
     }
@@ -791,7 +886,7 @@ public class MainForm : Form
         _hudPreview.Widgets = new List<HudWidget>();
         _metaLogged = false;
         _syncProgressShown = false;
-        Log("Device connected — clearing preview, waiting for phone layout...");
+        Log("Device connected â€” clearing preview, waiting for phone layout...");
 
         // Ask the phone for its meta + full layout right now so the preview
         // fills in immediately instead of waiting for the phone's next
@@ -800,7 +895,7 @@ public class MainForm : Form
 
         string devIp = _input.ConnectedDeviceIp ?? "Unknown";
         _lblDeviceName.Text = "connected device: --";
-        _lblPhoneIp.Text = $"Phone IP: {devIp}";
+        _lblPhoneIp.Text = _input.IsUsbConnection ? "Phone: USB connection (adb reverse)" : $"Phone IP: {devIp}";
         _lblBattery.Text = "Battery: --";
     }
 
@@ -824,7 +919,7 @@ public class MainForm : Form
         if (!_metaLogged)
         {
             _metaLogged = true;
-            Log($"Synced from phone: {name} | battery {s.PhoneBatteryPercent}% | steering {s.PhoneMaxAngle}° | clutch {(s.ClutchEnabled ? "ON" : "OFF")} | {s.PhoneScreenWidthPx}x{s.PhoneScreenHeightPx}px");
+            Log($"Synced from phone: {name} | battery {s.PhoneBatteryPercent}% | steering {s.PhoneMaxAngle}Â° | clutch {(s.ClutchEnabled ? "ON" : "OFF")} | {s.PhoneScreenWidthPx}x{s.PhoneScreenHeightPx}px");
         }
     }
 
@@ -891,7 +986,6 @@ public class MainForm : Form
         _connHeaderLabel.ForeColor = TextMuted;
         _lblDeviceName.Text = "connected device: --";
         _lblPhoneIp.Text = "Phone IP: --";
-        _lblBattery.Text = "Battery: --";
         _lblSteeringRange.Text = "Steering range: --";
         _lblPing.Text = "Current ping: -- ms";
     }
@@ -903,7 +997,7 @@ public class MainForm : Form
         // several times right after connecting, which used to flicker 5x).
         if (_syncProgressShown) return;
         _syncProgressShown = true;
-        _lblSyncProgress.Text = "Receiving current layout... [██████████] 100%";
+        _lblSyncProgress.Text = "Receiving current layout... [â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ] 100%";
         _lblSyncProgress.Visible = true;
         Task.Run(async () =>
         {
@@ -918,6 +1012,23 @@ public class MainForm : Form
     private void UpdateUI(object? sender, EventArgs e)
     {
         _hudPreview.IsConnected = _input.IsConnected;
+
+        // Refresh local IPv4 list every 5s (hotspot toggles, adapters change).
+        if (_lastIpRefreshUtc == default || (DateTime.UtcNow - _lastIpRefreshUtc).TotalSeconds >= 5)
+        {
+            _lastIpRefreshUtc = DateTime.UtcNow;
+            var ips = OmniWheelPC.Network.LocalAddresses.GetIpv4Preferred();
+            if (ips.Count == 0) _lblLanIp.Text = "LAN IPs: --";
+            else _lblLanIp.Text = "LAN IPs: " + string.Join(" | ", ips);
+        }
+
+        // USB status line reflects the live bridge state.
+        if (_lblUsbList != null)
+        {
+            _lblUsbList.Text = _input.IsUsbConnection
+                ? "â— Connected over USB (adb reverse)"
+                : (_adbRunner.Enabled ? "Waiting for USB phoneâ€¦ unplug the cable or accept the prompt." : "");
+        }
 
         var now = DateTime.UtcNow;
         var elapsedSec = (now - _lastPpsTime).TotalSeconds;
