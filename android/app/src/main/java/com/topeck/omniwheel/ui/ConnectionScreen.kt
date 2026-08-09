@@ -324,7 +324,15 @@ fun ConnectionScreen(
                             },
                             onError = { err ->
                                 usbConnecting = false
-                                errorMsg = err
+                                errorMsg = buildString {
+                                    append("Could not reach the PC over USB (adb reverse).\n\n")
+                                    append("Check that:\n")
+                                    append("1) The cable is plugged into the PC\n")
+                                    append("2) The USB card on the PC shows ENABLE USB pressed\n")
+                                    append("3) USB debugging is ON (Settings > Developer options)\n")
+                                    append("4) You accepted \u201CAllow USB debugging?\u201D on this phone\n\n")
+                                    append("Detail: ").append(err)
+                                }
                             }
                         )
                     }
