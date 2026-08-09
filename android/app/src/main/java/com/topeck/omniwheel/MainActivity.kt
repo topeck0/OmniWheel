@@ -407,6 +407,7 @@ fun ControllerScreen(
                 gyroAvailable = gyroManager.isAvailable,
                 gyroActive = gyroEnabled && gyroManager.isEnabled,
                 connectedIp = connectedIp,
+                isUsb = inputSender.isUsbConnection,
                 packetCount = if (settings.showPacketCounter) lastPacketCount else -1,
                 layoutSyncInfo = layoutSyncLabel,
             )

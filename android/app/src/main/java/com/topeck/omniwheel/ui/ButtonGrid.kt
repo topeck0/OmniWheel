@@ -258,6 +258,7 @@ fun ControllerStatusBar(
     gyroAvailable: Boolean,
     gyroActive: Boolean,
     connectedIp: String,
+    isUsb: Boolean,
     packetCount: Int,
     layoutSyncInfo: String,
 ) {
@@ -278,7 +279,7 @@ fun ControllerStatusBar(
             )
             Spacer(Modifier.width(4.dp))
             Text(
-                text = connectedIp,
+                text = if (isUsb) "USB connection" else connectedIp,
                 fontSize = 8.sp,
                 color = Color(0xFF444444)
             )
@@ -302,7 +303,7 @@ fun ControllerStatusBar(
         
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "v0.9.12",
+                text = "v0.9.13",
                 fontSize = 8.sp,
                 color = Color(0xFF555555)
             )

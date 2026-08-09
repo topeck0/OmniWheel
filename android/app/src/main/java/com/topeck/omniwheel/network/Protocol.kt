@@ -39,6 +39,11 @@ object Protocol {
     const val INPUT_PORT = 19701
     const val CONTROL_PORT = 19702
 
+    // USB debugging bridge (adb reverse): the phone opens a TCP connection to
+    // localhost on this port; the PC relays each OW packet as a length-prefixed
+    // frame (4-byte big-endian) because adb reverse only carries TCP.
+    const val USB_BRIDGE_PORT = 19710
+
     const val HEADER_SIZE = 8
     const val CRC_SIZE = 2
 
