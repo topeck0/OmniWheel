@@ -61,6 +61,18 @@ class InputSender(private val context: Context) {
     @Volatile private var usbReconnectEnabled = false
     @Volatile private var usbReconnectThread: Thread? = null
 
+    // Transport generation. Every loop (send/heartbeat/receive) captures the
+    // generation it was started under and dies the moment it changes. Without
+    // this, a session that drops and auto-reconnects inside USB_RECONNECT_DELAY_MS
+    // leaves the OLD loops alive: `running` flips back to true before the old
+    // heartbeat/send re-check it, so they keep firing on the brand-new socket —
+    // and the old receiver's IOException re-triggers failUsbTransport, knocking
+    // down the fresh link the instant it comes up (the "random disconnect"
+    // while connected over USB).
+    @Volatile private var transportGen = 0
+    /** Set when the current transport's USB read fails; consumed by the receiver loop. */
+    @Volatile private var lastUsbError: String? = null
+
     /** Invoked on the receiver thread when the PC asks us to resend the layout. */
     @Volatile var onResyncRequested: (() -> Unit)? = null
 
@@ -151,10 +163,12 @@ class InputSender(private val context: Context) {
     private fun failUsbTransport(reason: String) {
         if (!running) return
         running = false
+        transportGen++  // kill any in-flight loops from the dead generation
         isUsbConnection = false
         try { usbSocket?.close() } catch (_: Exception) {}
         onLog?.invoke(reason)
         setState(State.CONNECTING)
+        val gen = transportGen
         usbReconnectThread = thread(name = "UsbReconnect") {
             var attempt = 0
             while (attempt < USB_RECONNECT_ATTEMPTS) {
@@ -163,6 +177,10 @@ class InputSender(private val context: Context) {
                     Thread.sleep(USB_RECONNECT_DELAY_MS)
                 } catch (_: InterruptedException) { break }
                 if (!usbReconnectEnabled) break
+                // A newer failUsbTransport bumped transportGen and started its
+                // OWN reconnect thread — this one must stand down or we get two
+                // redial loops racing over the shared socket.
+                if (gen != transportGen) break
                 if (state != State.CONNECTING) break
                 try {
                     val socket = Socket()
@@ -219,8 +237,13 @@ class InputSender(private val context: Context) {
                 data
             }
         } catch (e: Exception) {
-            if (e is java.io.IOException && running && usbSocket != null) {
-                failUsbTransport("USB bridge lost: ${e.message}")
+            // Never call failUsbTransport from here — the caller loop is the one
+            // that owns the generation check. A stale receiver thread from a
+            // previous transport would otherwise kill the freshly-reconnected
+            // session (its IOException surfaces AFTER running flipped back true).
+            if (e is java.io.IOException) {
+                lastUsbError = e.message
+                if (running) onLog?.invoke("USB bridge read failed: ${e.message}")
             }
             null
         }
@@ -499,6 +522,7 @@ class InputSender(private val context: Context) {
 
     private fun startSendLoop() {
         sendThread = thread(name = "InputSender") {
+            val gen = transportGen
             val intervalNs = 1_000_000_000L / sendRateHz
             var nextTime = System.nanoTime()
             var lastForceSendTime = 0L
@@ -522,7 +546,7 @@ class InputSender(private val context: Context) {
             var prevGyroZ: Short = Short.MIN_VALUE
             var prevButtons: Set<Int> = emptySet()
 
-            while (running) {
+            while (running && gen == transportGen) {
                 try {
                     val now = System.nanoTime()
                     if (now >= nextTime) {
@@ -632,7 +656,8 @@ class InputSender(private val context: Context) {
 
     private fun startHeartbeat() {
         heartbeatThread = thread(name = "Heartbeat") {
-            while (running) {
+            val gen = transportGen
+            while (running && gen == transportGen) {
                 try {
                     Thread.sleep(3000)
                     if (running) {
@@ -655,8 +680,9 @@ class InputSender(private val context: Context) {
      */
     private fun startReceiveLoop() {
         receiveThread = thread(name = "InputReceiver") {
+            val gen = transportGen
             val buf = ByteArray(512)
-            while (running) {
+            while (running && gen == transportGen) {
                 try {
                     val data = receivePacket() ?: break
                     val header = Protocol.parseHeader(data) ?: continue
@@ -678,6 +704,14 @@ class InputSender(private val context: Context) {
                 catch (e: Exception) {
                     if (running) onLog?.invoke("Receive error: ${e.message}")
                 }
+            }
+            // A USB read failed on OUR generation: the bridge is really gone
+            // (not a stale thread from a previous transport). Hand off to the
+            // reconnect logic so the user stays in the session.
+            if (gen == transportGen && lastUsbError != null && running) {
+                val err = lastUsbError
+                lastUsbError = null
+                failUsbTransport("USB bridge lost: $err")
             }
         }
     }
@@ -747,6 +781,7 @@ class InputSender(private val context: Context) {
 
     private fun stopInternal() {
         running = false
+        transportGen++
         sendThread?.interrupt()
         heartbeatThread?.interrupt()
         receiveThread?.interrupt()
