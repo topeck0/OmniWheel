@@ -52,6 +52,15 @@ class InputSender(private val context: Context) {
     private var usbIn: DataInputStream? = null
     private val usbLock = Any()
 
+    // Auto-reconnect for the USB bridge: when a live USB session drops (cable
+    // blip, adb reverse briefly out), retry dialing the bridge a few times
+    // before giving up and returning to the connection screen. Keeps you
+    // driving through transient drops instead of forcing a manual reconnect.
+    private const val USB_RECONNECT_ATTEMPTS = 6
+    private const val USB_RECONNECT_DELAY_MS = 1500L
+    @Volatile private var usbReconnectEnabled = false
+    @Volatile private var usbReconnectThread: Thread? = null
+
     /** Invoked on the receiver thread when the PC asks us to resend the layout. */
     @Volatile var onResyncRequested: (() -> Unit)? = null
 
@@ -135,7 +144,9 @@ class InputSender(private val context: Context) {
     /**
      * Give up on the USB transport. We are called from the sender or the
      * receiver thread when the adb-reverse bridge drops out from under us
-     * (broken pipe). The send/receive loops observe `running == false` and end.
+     * (broken pipe). First try a short auto-reconnect loop (the adb reverse
+     * mapping on the PC survives and the phone just needs to redial the local
+     * bridge) before declaring the transport dead.
      */
     private fun failUsbTransport(reason: String) {
         if (!running) return
@@ -143,7 +154,44 @@ class InputSender(private val context: Context) {
         isUsbConnection = false
         try { usbSocket?.close() } catch (_: Exception) {}
         onLog?.invoke(reason)
-        setState(State.DISCONNECTED)
+        setState(State.CONNECTING)
+        usbReconnectThread = thread(name = "UsbReconnect") {
+            var attempt = 0
+            while (attempt < USB_RECONNECT_ATTEMPTS) {
+                attempt++
+                try {
+                    Thread.sleep(USB_RECONNECT_DELAY_MS)
+                } catch (_: InterruptedException) { break }
+                if (!usbReconnectEnabled) break
+                if (state != State.CONNECTING) break
+                try {
+                    val socket = Socket()
+                    socket.tcpNoDelay = true
+                    socket.connect(InetSocketAddress("127.0.0.1", Protocol.USB_BRIDGE_PORT), 4000)
+                    if (!usbReconnectEnabled) {
+                        try { socket.close() } catch (_: Exception) {}
+                        break
+                    }
+                    usbSocket = socket
+                    usbOut = DataOutputStream(socket.getOutputStream())
+                    usbIn = DataInputStream(socket.getInputStream())
+                    isUsbConnection = true
+                    running = true
+                    onLog?.invoke("USB bridge reconnected (attempt ${attempt + 1})")
+                    transmit(Protocol.buildPacket(Protocol.TYPE_CONNECT))
+                    setState(State.CONNECTED)
+                    startSendLoop()
+                    startHeartbeat()
+                    startReceiveLoop()
+                    return@thread
+                } catch (_: Exception) {
+                    onLog?.invoke("USB reconnect attempt ${attempt + 1} failed")
+                }
+            }
+            if (usbReconnectEnabled && state == State.CONNECTING) {
+                setState(State.DISCONNECTED)
+            }
+        }
     }
 
     /** Receive one packet (UDP datagram or USB frame), null when shutting down. */
@@ -302,6 +350,7 @@ class InputSender(private val context: Context) {
 
     fun connect(ip: String, onReady: () -> Unit, onError: ((String) -> Unit)? = null) {
         targetIp = ip
+        usbReconnectEnabled = false
         stopInternal()
 
         try {
@@ -412,6 +461,8 @@ class InputSender(private val context: Context) {
         setState(State.CONNECTING)
         onLog?.invoke("USB connect: opening 127.0.0.1:${Protocol.USB_BRIDGE_PORT}...")
 
+        usbReconnectEnabled = true
+
         thread(name = "UsbConnector") {
             try {
                 val socket = Socket()
@@ -451,6 +502,15 @@ class InputSender(private val context: Context) {
             val intervalNs = 1_000_000_000L / sendRateHz
             var nextTime = System.nanoTime()
             var lastForceSendTime = 0L
+
+            // Congestion backoff: when a UDP send blocks for a while, the WiFi
+            // driver/kernel buffer is wedged. Piling on 4x redundant copies
+            // just keeps it wedged (the classic "pk/s collapses towards 1 for
+            // a few seconds, then recovers" symptom). When detected, drop to a
+            // single copy for a short window so the link drains instead of
+            // blocking the send loop.
+            var congestionUntilMs = 0L
+            var lastCongestionLogMs = 0L
 
             // Delta tracking
             var prevSteering: Short = Short.MIN_VALUE
@@ -498,9 +558,23 @@ class InputSender(private val context: Context) {
                             // between a shift and a destroyed gearbox. Send them
                             // 4x back-to-back on WiFi. Over the wired USB TCP
                             // bridge one copy is already reliable.
-                            val copies = if (usbSocket != null) 1 else if (changed) 4 else 2
+                            val congested = System.currentTimeMillis() < congestionUntilMs
+                            val copies = if (usbSocket != null) 1
+                                else if (congested) 1
+                                else if (changed) 4
+                                else 2
+
+                            val sendStartNs = System.nanoTime()
                             for (c in 0 until copies) {
                                 transmit(packet)
+                            }
+                            val blockedMs = (System.nanoTime() - sendStartNs) / 1_000_000
+                            if (blockedMs > 8) {
+                                congestionUntilMs = nowMs + 100
+                                if (nowMs - lastCongestionLogMs > 4000) {
+                                    lastCongestionLogMs = nowMs
+                                    onLog?.invoke("WiFi saturated — UDP send blocked ${blockedMs}ms, throttling copies")
+                                }
                             }
                             _sendCount++
                             _dupCount += copies - 1
@@ -610,6 +684,7 @@ class InputSender(private val context: Context) {
 
     fun connectDirect(ip: String, onReady: () -> Unit, onError: ((String) -> Unit)? = null) {
         targetIp = ip
+        usbReconnectEnabled = false
         stopInternal()
 
         try {
@@ -664,6 +739,7 @@ class InputSender(private val context: Context) {
                 }
             } catch (_: Exception) {}
         }
+        usbReconnectEnabled = false
         stopInternal()
         setState(State.DISCONNECTED)
         onLog?.invoke("Disconnected")

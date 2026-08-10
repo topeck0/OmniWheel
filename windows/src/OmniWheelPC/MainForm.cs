@@ -735,20 +735,19 @@ public class MainForm : Form
             cp.Style &= ~0x00080000; // WS_SYSMENU
             cp.Style &= ~0x00020000; // WS_MINIMIZEBOX
             cp.Style &= ~0x00010000; // WS_MAXIMIZEBOX
-            cp.Style &= ~0x00040000; // WS_THICKFRAME (no native resize frame)
             cp.ExStyle &= ~0x00000080; // WS_EX_DLGMODALFRAME
+            // NOTE: WS_THICKFRAME stays ON — it is what makes edge/corner
+            // dragging, native resize cursors and Windows 11 snap layouts work
+            // on a frameless form. The thick frame itself never shows: DWM
+            // rendering is disabled, WM_NCCALCSIZE collapses the non-client area
+            // to zero and WM_NCPAINT is short-circuited, so it cannot paint the
+            // ghost caption strip.
             return cp;
         }
     }
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MARGINS { public int Left, Right, Top, Bottom; }
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
@@ -782,12 +781,6 @@ public class MainForm : Form
         // rounding via the region, so DWM rounding is unnecessary.
         int donotround = 1;
         DwmSetWindowAttribute(Handle, 33, ref donotround, sizeof(int));
-
-        // Equivalent of "ExtendsContentIntoTitleBar = true": push the DWM
-        // frame completely into the client area with negative margins so DWM
-        // does NOT reserve/reserve-paint any caption rect at the top.
-        var margins = new MARGINS { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-        DwmExtendFrameIntoClientArea(Handle, ref margins);
 
         // Force Windows to re-run the frame layout with the stripped styles, so
         // any caption rect DWM cached at create time is dropped for good.

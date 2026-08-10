@@ -120,8 +120,9 @@ fun ConnectionScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "\u2699",  // gear symbol
-                    fontSize = 20.sp,
+                    text = "SET",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
                     color = Color(0xFF888888)
                 )
             }
@@ -226,16 +227,6 @@ fun ConnectionScreen(
         }
 
         Spacer(Modifier.height(8.dp))
-
-        // Error message
-        errorMsg?.let { err ->
-            Text(
-                text = err,
-                fontSize = 11.sp,
-                color = Color(0xFFEF4444),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
 
         // Device list
         if (devices.value.isEmpty()) {
@@ -349,13 +340,6 @@ fun ConnectionScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Text(
-                        text = if (usbConnecting) "..." else "\uD83D\uDD0C",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
                         text = if (usbConnecting) "Connecting..." else "Connect USB",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -381,13 +365,6 @@ fun ConnectionScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Text(
-                        text = "\uD83D\uDCA0",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF00E5FF)
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
                         text = "HUD Editor",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -401,6 +378,22 @@ fun ConnectionScreen(
                     )
                 }
             }
+        }
+
+        // Error message shown as a popup dialog instead of red inline text
+        // that pushed the action buttons off-screen.
+        errorMsg?.let { err ->
+            AlertDialog(
+                onDismissRequest = { errorMsg = null },
+                containerColor = Color(0xFF1A1A2E),
+                title = { Text("OmniWheel", fontWeight = FontWeight.Bold, color = Color.White) },
+                text = { Text(err, fontSize = 13.sp, color = Color.White) },
+                confirmButton = {
+                    TextButton(onClick = { errorMsg = null }) {
+                        Text("OK", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
         }
 
         // USB instructions dialog — shown when the user taps Connect USB while
