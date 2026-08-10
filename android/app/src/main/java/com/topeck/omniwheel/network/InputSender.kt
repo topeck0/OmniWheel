@@ -56,8 +56,8 @@ class InputSender(private val context: Context) {
     // blip, adb reverse briefly out), retry dialing the bridge a few times
     // before giving up and returning to the connection screen. Keeps you
     // driving through transient drops instead of forcing a manual reconnect.
-    private const val USB_RECONNECT_ATTEMPTS = 6
-    private const val USB_RECONNECT_DELAY_MS = 1500L
+    private val USB_RECONNECT_ATTEMPTS = 6
+    private val USB_RECONNECT_DELAY_MS = 1500L
     @Volatile private var usbReconnectEnabled = false
     @Volatile private var usbReconnectThread: Thread? = null
 
