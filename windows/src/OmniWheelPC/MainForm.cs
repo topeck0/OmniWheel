@@ -130,7 +130,7 @@ public class MainForm : Form
     private bool _syncProgressShown;
     private bool _dwmRounded;
     private long _lastPingSampleMs = -1;
-    private int _smoothedLatency = -1;
+    private double _smoothedLatency = -1;
 
     public MainForm()
     {
@@ -1137,10 +1137,10 @@ public class MainForm : Form
             if (_lastPingSampleMs < 0 || nowMs - _lastPingSampleMs >= 250)
             {
                 _lastPingSampleMs = nowMs;
-                int raw = _input.CurrentState.LatencyMs;
-                _smoothedLatency = _smoothedLatency < 0 ? raw : (int)(_smoothedLatency * 0.7 + raw * 0.3);
-                _lblPing.Text = $"Latency: {_smoothedLatency} ms";
-                _pingGraph.AddPing(_smoothedLatency);
+                double raw = _input.CurrentState.LatencyMs;
+                _smoothedLatency = _smoothedLatency < 0 ? raw : (_smoothedLatency * 0.7 + raw * 0.3);
+                _lblPing.Text = $"Latency: {FormatLatencyMs(_smoothedLatency)} ms";
+                _pingGraph.AddPing((int)Math.Round(_smoothedLatency));
             }
         }
         else
@@ -1148,6 +1148,18 @@ public class MainForm : Form
             _smoothedLatency = -1;
             _lblPing.Text = "Latency: -- ms";
         }
+    }
+
+    /// <summary>
+    /// Sub-millisecond real pings are genuinely achievable on a fast local link
+    /// (WiFi LAN or USB), but they must never display as the impossible "0 ms".
+    /// Under 1ms we show two decimals ("0.98 ms"); at 1ms+ show the rounded
+    /// integer as before.
+    /// </summary>
+    private static string FormatLatencyMs(double ms)
+    {
+        if (ms < 1.0) return ms.ToString("0.00");
+        return ((long)Math.Round(ms)).ToString();
     }
 
     private void Log(string msg)

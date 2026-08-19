@@ -56,10 +56,22 @@ class InputSender(private val context: Context) {
     // blip, adb reverse briefly out), retry dialing the bridge a few times
     // before giving up and returning to the connection screen. Keeps you
     // driving through transient drops instead of forcing a manual reconnect.
-    private val USB_RECONNECT_ATTEMPTS = 6
-    private val USB_RECONNECT_DELAY_MS = 1500L
+    // Retries are tuned so the whole retry window fits inside the 5s "exiting
+    // this interface in 5s" countdown shown by the controller UI.
+    private val USB_RECONNECT_ATTEMPTS = 5
+    private val USB_RECONNECT_DELAY_MS = 900L
     @Volatile private var usbReconnectEnabled = false
     @Volatile private var usbReconnectThread: Thread? = null
+
+    /**
+     * Set to true the moment the live USB transport fails (the UI shows
+     * "USB disconnected! trying to connect..." + a 5s exit countdown), and
+     * cleared again when the bridge is re-established or given up on.
+     */
+    @Volatile var usbReconnecting = false
+    @Volatile var usbDropReason: String = ""
+    /** Fired (on the failing thread) when the USB transport drops mid-session. */
+    @Volatile var onUsbDrop: ((String) -> Unit)? = null
 
     // Transport generation. Every loop (send/heartbeat/receive) captures the
     // generation it was started under and dies the moment it changes. Without
@@ -168,6 +180,10 @@ class InputSender(private val context: Context) {
         try { usbSocket?.close() } catch (_: Exception) {}
         onLog?.invoke(reason)
         setState(State.CONNECTING)
+        // Surface the drop to the controller UI (banner + 5s exit countdown).
+        usbDropReason = reason
+        usbReconnecting = true
+        onUsbDrop?.invoke(reason)
         val gen = transportGen
         usbReconnectThread = thread(name = "UsbReconnect") {
             var attempt = 0
@@ -195,6 +211,7 @@ class InputSender(private val context: Context) {
                     usbIn = DataInputStream(socket.getInputStream())
                     isUsbConnection = true
                     running = true
+                    usbReconnecting = false
                     onLog?.invoke("USB bridge reconnected (attempt ${attempt + 1})")
                     transmit(Protocol.buildPacket(Protocol.TYPE_CONNECT))
                     setState(State.CONNECTED)
@@ -206,6 +223,7 @@ class InputSender(private val context: Context) {
                     onLog?.invoke("USB reconnect attempt ${attempt + 1} failed")
                 }
             }
+            usbReconnecting = false
             if (usbReconnectEnabled && state == State.CONNECTING) {
                 setState(State.DISCONNECTED)
             }
@@ -774,6 +792,7 @@ class InputSender(private val context: Context) {
             } catch (_: Exception) {}
         }
         usbReconnectEnabled = false
+        usbReconnecting = false
         stopInternal()
         setState(State.DISCONNECTED)
         onLog?.invoke("Disconnected")
@@ -782,6 +801,7 @@ class InputSender(private val context: Context) {
     private fun stopInternal() {
         running = false
         transportGen++
+        usbReconnecting = false
         sendThread?.interrupt()
         heartbeatThread?.interrupt()
         receiveThread?.interrupt()

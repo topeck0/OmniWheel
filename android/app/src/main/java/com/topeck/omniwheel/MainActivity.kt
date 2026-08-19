@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import android.view.View
 import android.view.Window
@@ -22,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.topeck.omniwheel.network.DiscoveryClient
@@ -254,6 +257,18 @@ fun ControllerScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    // USB drop recovery: mirrored from InputSender.usbReconnecting so the
+    // compiler sees a proper Compose state. Shows a small top-corner banner,
+    // vibrates twice and counts down 5s while InputSender quickly redials the
+    // bridge; if it can't reconnect by then, leave the game screen. The banner
+    // appears on the RISING edge of usbReconnecting (not on its value) so the
+    // countdown owns the whole recovery window and never gets cancelled early
+    // by the "give up" flip.
+    var usbDropBanner by remember { mutableStateOf(false) }
+    var usbDropCountdown by remember { mutableStateOf(5) }
+    var suppressAutoBack by remember { mutableStateOf(false) }
+    var wasUsbReconnecting by remember { mutableStateOf(false) }
+
     // Push our device metadata + layout to the PC so the preview is a live copy.
     // The authoritative full layout (chunked) is re-sent on EVERY fast cycle
     // right after connecting, and periodically afterwards, so the PC always
@@ -391,16 +406,48 @@ fun ControllerScreen(
     // torn down, broken pipe), come back to the connection screen so the user
     // can reconnect instead of silently driving a dead link. Track the
     // CONNECTED -> DISCONNECTED transition explicitly so the initial
-    // DISCONNECTED state never yanks us back on first open.
+    // DISCONNECTED state never yanks us back on first open. During a USB drop
+    // the 5s recovery banner owns the exit (suppressAutoBack), so we never
+    // jump out of the game screen before the user has had a chance to see that
+    // the app is trying to reconnect.
     var linkWasConnected by remember(connectedIp) { mutableStateOf(false) }
     LaunchedEffect(inputSender.state) {
         when (inputSender.state) {
             InputSender.State.CONNECTED -> linkWasConnected = true
-            InputSender.State.DISCONNECTED -> if (linkWasConnected) {
+            InputSender.State.DISCONNECTED -> if (linkWasConnected && !suppressAutoBack) {
                 linkWasConnected = false
                 onBack()
             }
             else -> {}
+        }
+    }
+
+    // USB drop banner: as soon as the USB bridge fails mid-session, vibrate
+    // twice, show "USB disconnected! trying to connect..." and run the 5s
+    // countdown while InputSender retries fast. If the link recovers, hide the
+    // banner; if the retries gave up (or we're no longer CONNECTED) by the end
+    // of the window, exit to the connection screen. The countdown owns the
+    // whole window, so it never races with the DISCONNECTED handler above.
+    LaunchedEffect(usbDropBanner) {
+        if (usbDropBanner) {
+            suppressAutoBack = true
+            vibrateTwice(context)
+            usbDropCountdown = 5
+            while (usbDropCountdown > 0) {
+                delay(1000)
+                usbDropCountdown--
+                if (!inputSender.usbReconnecting) break
+            }
+            if (inputSender.usbReconnecting || inputSender.state != InputSender.State.CONNECTED) {
+                suppressAutoBack = false
+                usbDropBanner = false
+                onBack()
+            } else {
+                suppressAutoBack = false
+                usbDropBanner = false
+            }
+        } else {
+            suppressAutoBack = false
         }
     }
 
@@ -411,6 +458,11 @@ fun ControllerScreen(
             inputSender.brake = (brake * 255).toInt().toByte()
             inputSender.clutch = (clutch * 255).toInt().toByte()
             inputSender.activeButtons = activeButtons.value
+            val reconnecting = inputSender.usbReconnecting
+            if (reconnecting && !wasUsbReconnecting) {
+                usbDropBanner = true
+            }
+            wasUsbReconnecting = reconnecting
             lastPacketCount = inputSender.sendCount
             val syncLabel = inputSender.layoutSyncInfo
             if (syncLabel != layoutSyncLabel) layoutSyncLabel = syncLabel
@@ -505,6 +557,36 @@ fun ControllerScreen(
             }
         }
 
+        // USB drop banner — small and light, top-right corner, so the driving
+        // view stays usable while the app redials the bridge.
+        if (usbDropBanner) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 30.dp, end = 8.dp)
+                    .background(Color(0xCC111111), MaterialTheme.shapes.small)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+                Text(
+                    text = "USB disconnected!",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFF6B6B)
+                )
+                Text(
+                    text = "trying to connect",
+                    fontSize = 9.sp,
+                    color = Color(0xFFCCCCCC)
+                )
+                Text(
+                    text = "exiting this interface in $usbDropCountdown s",
+                    fontSize = 9.sp,
+                    color = Color(0xFFCCCCCC)
+                )
+            }
+        }
+
         // Back-press toast
         if (backPressedOnce) {
             Box(
@@ -522,4 +604,19 @@ fun ControllerScreen(
             }
         }
     }
+}
+
+/** Vibrate the phone twice (double buzz) as a heads-up that the USB link dropped. */
+private fun vibrateTwice(context: Context) {
+    try {
+        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+        if (!vibrator.hasVibrator()) return
+        val pattern = longArrayOf(0, 140, 120, 140) // pause, buzz, pause, buzz
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(pattern, -1)
+        }
+    } catch (_: Exception) { }
 }

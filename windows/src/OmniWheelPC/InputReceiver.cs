@@ -54,6 +54,13 @@ public class InputReceiver : IDisposable
     private byte _lastInputSeq;
     private bool _hasInputSeq;
 
+    // Timestamp of the most recent PING we sent. A PONG carrying a DIFFERENT
+    // timestamp is a stale/delayed echo from an older PING; accepting it would
+    // measure the age of that old PING against NOW and fake a huge latency
+    // spike (the sudden "400/600ms" even on a perfectly stable link).
+    private long _lastSentPingTs = -1;
+    private bool _sentPing;
+
     // Packet counters (shared between UDP and USB paths)
     private int _packetCount;
     private int _crcErrors;
@@ -338,11 +345,21 @@ public class InputReceiver : IDisposable
                 | (data[hdr.HeaderSize + 1] << 8)
                 | (data[hdr.HeaderSize + 2] << 16)
                 | (data[hdr.HeaderSize + 3] << 24));
+
+            // Reject stale echoes: only the PONG that echoes the timestamp of
+            // the PING we MOST RECENTLY sent is the round-trip we care about.
+            // A delayed PONG from an older PING would otherwise look like a
+            // multi-hundred-ms latency out of nowhere on an otherwise stable
+            // connection (WiFi queue hiccup, USB bridge blip, GC pause...).
+            if (!_sentPing || tsLow != _lastSentPingTs) return;
+
             long nowUnix = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             long tsFull = (nowUnix & ~0xFFFFFFFFL) | tsLow;
             long rtt = nowUnix - tsFull;
             if (rtt < 0) rtt += 0x100000000L; // borrow across the 32-bit wrap
-            CurrentState.LatencyMs = (int)Math.Max(0, rtt / 2);
+            // One-way latency = RTT/2. Kept as a double so sub-millisecond
+            // values surface as e.g. "0.98 ms" instead of truncating to "0".
+            CurrentState.LatencyMs = Math.Max(0, rtt / 2.0);
         }
         else if (hdr.Type == Protocol.PacketType.Meta && hdr.PayloadLength >= 12)
         {
@@ -444,6 +461,8 @@ public class InputReceiver : IDisposable
             try
             {
                 long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                _lastSentPingTs = nowMs & 0xFFFFFFFFL; // record BEFORE we send
+                _sentPing = true;
                 var payload = new byte[4];
                 payload[0] = (byte)(nowMs & 0xFF);
                 payload[1] = (byte)((nowMs >> 8) & 0xFF);
@@ -626,7 +645,10 @@ public class InputState
     public bool ClutchEnabled { get; set; } = true;
 
     public DateTime Timestamp { get; set; }
-    public int LatencyMs { get; set; }
+    /// <summary>One-way latency in ms. Stored as a double so sub-1ms values
+    /// (e.g. rtt 1.9ms -> 0.95ms) display as "0.95 ms" instead of truncating
+    /// the impossible-looking "0 ms".</summary>
+    public double LatencyMs { get; set; }
 
     public float NormalizedSteering => Steering / 32768f;
     public float NormalizedThrottle => Throttle / 255f;
