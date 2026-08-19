@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using OmniWheelPC.Network;
 
@@ -131,6 +132,7 @@ public class MainForm : Form
     private bool _dwmRounded;
     private long _lastPingSampleMs = -1;
     private double _smoothedLatency = -1;
+    private int _highConsecutive;
 
     public MainForm()
     {
@@ -463,7 +465,7 @@ public class MainForm : Form
 
         _lblUsbStatus = new Label
         {
-            Text = "Press ENABLE to accept a phone over USB debugging.",
+            Text = "Press ENABLE to accept a phone.",
             Font = FntInfo,
             ForeColor = TextMuted,
             AutoSize = true,
@@ -476,7 +478,7 @@ public class MainForm : Form
             Font = FntInfo,
             ForeColor = TextDim,
             AutoSize = true,
-            Location = new Point(16, 106)
+            Location = new Point(16, 108)
         };
 
         _usbCard.Controls.AddRange(new Control[]
@@ -640,23 +642,45 @@ public class MainForm : Form
     {
         if (_adbRunner.Enabled)
         {
-            _adbRunner.Disable();
-            // Tear down an existing USB session too — removing the adb reverse
-            // mapping alone leaves the accepted TCP connection alive.
-            _input.StopUsbSession();
-            _btnUsbToggle.Text = "ENABLE USB";
-            _btnUsbToggle.BackColor = AccentBlue;
-            _lblUsbStatus.Text = "USB disabled. Press ENABLE to accept a phone over USB debugging.";
-            _lblUsbList.Text = "";
-            Log("USB bridge disabled");
+            _btnUsbToggle.Enabled = false;
+            _btnUsbToggle.Text = "DISABLING USB\u2026";
+            _btnUsbToggle.BackColor = Color.FromArgb(51, 65, 85);
+            _lblUsbStatus.Text = "Tearing down USB bridge\u2026";
+            Task.Run(() =>
+            {
+                _adbRunner.Disable();
+                // Tear down an existing USB session too — removing the adb
+                // reverse mapping alone leaves the accepted TCP connection alive.
+                _input.StopUsbSession();
+            }).ContinueWith(_ =>
+            {
+                _btnUsbToggle.Enabled = true;
+                _btnUsbToggle.Text = "ENABLE USB";
+                _btnUsbToggle.BackColor = AccentBlue;
+                _lblUsbStatus.Text = "USB off. Press ENABLE to accept a phone.";
+                _lblUsbList.Text = "";
+                Log("USB bridge disabled");
+            }, TaskScheduler.FromCurrentSynchronizationContext());
         }
         else
         {
-            _adbRunner.Enable();
-            _btnUsbToggle.Text = "DISABLE USB";
+            _btnUsbToggle.Enabled = false;
+            _btnUsbToggle.Text = "ENABLING USB\u2026";
             _btnUsbToggle.BackColor = Color.FromArgb(51, 65, 85);
-            _lblUsbStatus.Text = "USB enabled — run the phone's 'Connect USB' and accept the debugging prompt.";
-            Log("USB bridge enabled — adb reverse on localhost:" + OmniWheelPC.Network.Protocol.UsbBridgeTcpPort);
+            _lblUsbStatus.Text = "Setting up USB bridge\u2026";
+            Task.Run(() => _adbRunner.Enable()).ContinueWith(_ =>
+            {
+                _btnUsbToggle.Enabled = true;
+                bool on = _adbRunner.Enabled;
+                _btnUsbToggle.Text = on ? "DISABLE USB" : "ENABLE USB";
+                _btnUsbToggle.BackColor = on ? Color.FromArgb(51, 65, 85) : AccentBlue;
+                _lblUsbStatus.Text = on
+                    ? "USB on \u2014 run 'Connect USB' on the phone."
+                    : "USB off. Press ENABLE to accept a phone.";
+                Log(on
+                    ? "USB bridge enabled \u2014 adb reverse on localhost:" + OmniWheelPC.Network.Protocol.UsbBridgeTcpPort
+                    : "USB bridge failed to start \u2014 check adb");
+            }, TaskScheduler.FromCurrentSynchronizationContext());
         }
     }
 
@@ -924,6 +948,13 @@ public class MainForm : Form
         int usbH = 120;
         _usbCard.Bounds = new Rectangle(rightX, usbY, rightW, usbH);
 
+        // Keep the USB status labels inside the card no matter the window
+        // width: AutoSize + MaximumSize wraps the text instead of clipping
+        // it at the card edge (the whole line used to disappear gradually).
+        int usbTextW = Math.Max(120, rightW - 32);
+        _lblUsbStatus.MaximumSize = new Size(usbTextW, 0);
+        _lblUsbList.MaximumSize = new Size(usbTextW, 0);
+
         int logY = usbY + usbH + 16;
         int logH = contentH - logY + 20;
         _logCard.Bounds = new Rectangle(rightX, logY, rightW, Math.Max(100, logH));
@@ -1109,7 +1140,7 @@ public class MainForm : Form
         {
             _lblUsbList.Text = _input.IsUsbConnection
                 ? "\u25CF Connected over USB (adb reverse)"
-                : (_adbRunner.Enabled ? "Waiting for USB phone\u2026 unplug the cable or accept the prompt." : "");
+                : (_adbRunner.Enabled ? "Waiting for phone\u2026" : "");
         }
 
         var now = DateTime.UtcNow;
@@ -1132,13 +1163,46 @@ public class MainForm : Form
         if (_input.IsConnected)
         {
             // Sample latency at 4 Hz and smooth it with an EMA so the number
-            // settles instead of flickering with every packet burst.
+            // settles instead of flickering with every packet burst. Two
+            // guards keep the meter honest on an unstable link:
+            //  * a single wild sample (UDP queue blast, adb reverse blip, GC
+            //    pause) is a measuring glitch, not the real link speed — it is
+            //    ignored unless a few HIGH samples agree, so a one-off stutter
+            //    can never drive the readout from 50ms to 2000ms;
+            //  * the value is capped at 500ms one-way, so no matter how hard
+            //    the connection gets the UI never prints impossible numbers.
             long nowMs = now.Ticks / TimeSpan.TicksPerMillisecond;
             if (_lastPingSampleMs < 0 || nowMs - _lastPingSampleMs >= 250)
             {
                 _lastPingSampleMs = nowMs;
                 double raw = _input.CurrentState.LatencyMs;
-                _smoothedLatency = _smoothedLatency < 0 ? raw : (_smoothedLatency * 0.7 + raw * 0.3);
+                if (_smoothedLatency < 0)
+                {
+                    _smoothedLatency = Math.Min(raw, 500);
+                }
+                else
+                {
+                    double prev = _smoothedLatency;
+                    if (raw > Math.Max(prev * 4 + 100, 150))
+                    {
+                        // Outlier spike. Believe it only after it is confirmed
+                        // by enough consecutive HIGH samples that the lag is real.
+                        if (_highConsecutive >= 2)
+                        {
+                            _smoothedLatency = Math.Min(prev * 0.6 + raw * 0.4, 500);
+                            _highConsecutive = 0;
+                        }
+                        else
+                        {
+                            _highConsecutive++;
+                        }
+                    }
+                    else
+                    {
+                        _highConsecutive = 0;
+                        _smoothedLatency = prev * 0.6 + Math.Min(raw, 500) * 0.4;
+                    }
+                }
                 _lblPing.Text = $"Latency: {FormatLatencyMs(_smoothedLatency)} ms";
                 _pingGraph.AddPing((int)Math.Round(_smoothedLatency));
             }
@@ -1146,6 +1210,7 @@ public class MainForm : Form
         else
         {
             _smoothedLatency = -1;
+            _highConsecutive = 0;
             _lblPing.Text = "Latency: -- ms";
         }
     }
