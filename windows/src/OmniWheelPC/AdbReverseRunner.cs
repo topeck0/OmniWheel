@@ -28,6 +28,7 @@ public sealed class AdbReverseRunner : IDisposable
     private readonly object _lock = new();
     private bool _enabled;
     private bool _disposed;
+    private bool _tickRunning;
     private string? _lastError;
 
     public event Action<string>? OnLog;
@@ -123,11 +124,30 @@ public sealed class AdbReverseRunner : IDisposable
         lock (_lock) enabled = _enabled;
         if (!enabled) return;
 
-        // A live phone session owns the tunnel: touching the mapping here would
-        // sever the connection. Wait until the phone is gone to re-issue.
-        if (_isUsbSessionActive?.Invoke() == true) return;
+        // Guard against overlapping ticks: if a previous adb run is still
+        // waiting (WaitForExit can block up to 5s while the timer fires every
+        // 3s), skip this one. Two concurrent "adb reverse" invocations against
+        // the same mapping are the kind of churn that can momentarily knock the
+        // tunnel sideways right as a phone redials the bridge.
+        if (_tickRunning) return;
+        _tickRunning = true;
+        try
+        {
+            // A live phone session owns the tunnel: touching the mapping here
+            // would sever the connection. Wait until the phone is gone to
+            // re-issue.
+            if (_isUsbSessionActive?.Invoke() == true) return;
 
-        RunAdbReverse(remove: false);
+            RunAdbReverse(remove: false);
+        }
+        catch
+        {
+            // Never let a timer tick take down the runner.
+        }
+        finally
+        {
+            _tickRunning = false;
+        }
     }
 
     private void RunAdbReverse(bool remove)

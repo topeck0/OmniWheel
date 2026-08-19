@@ -8,10 +8,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.topeck.omniwheel.SettingsManager
 import com.topeck.omniwheel.network.DiscoveryClient
 import com.topeck.omniwheel.network.InputSender
@@ -380,20 +384,11 @@ fun ConnectionScreen(
             }
         }
 
-        // Error message shown as a popup dialog instead of red inline text
-        // that pushed the action buttons off-screen.
+        // Error shown as a floating window (not inline text) so the layout
+        // underneath never moves. The window has an X in its top corner and a
+        // Close button; outside-tap dismisses too.
         errorMsg?.let { err ->
-            AlertDialog(
-                onDismissRequest = { errorMsg = null },
-                containerColor = Color(0xFF1A1A2E),
-                title = { Text("OmniWheel", fontWeight = FontWeight.Bold, color = Color.White) },
-                text = { Text(err, fontSize = 13.sp, color = Color.White) },
-                confirmButton = {
-                    TextButton(onClick = { errorMsg = null }) {
-                        Text("OK", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                }
-            )
+            ErrorDialog(message = err, onClose = { errorMsg = null })
         }
 
         // USB instructions dialog — shown when the user taps Connect USB while
@@ -504,6 +499,77 @@ private fun DeviceCard(
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF22C55E)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Floating error window. A small custom Dialog that reads like a window: a
+ * title bar with an X in the top corner, the message body, and a Close button.
+ * The connection screen behind it is untouched, so nothing gets pushed around.
+ */
+@Composable
+private fun ErrorDialog(message: String, onClose: () -> Unit) {
+    Dialog(onDismissRequest = onClose) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(min = 280.dp, max = 340.dp)
+                    .fillMaxWidth()
+                    .background(Color(0xFF1A1A2E), RoundedCornerShape(16.dp))
+                    .border(1.dp, Color(0xFF2A2A44), RoundedCornerShape(16.dp))
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "OmniWheel",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .background(Color(0xFF2A2A44), CircleShape)
+                            .clickable { onClose() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "\u2715", // ✕
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFEF4444)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = message,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    color = Color(0xFFE0E0E0)
+                )
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = onClose,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                ) {
+                    Text(
+                        text = "Close",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
             }
         }
     }
