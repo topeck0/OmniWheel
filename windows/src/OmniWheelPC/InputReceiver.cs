@@ -359,7 +359,10 @@ public class InputReceiver : IDisposable
             if (rtt < 0) rtt += 0x100000000L; // borrow across the 32-bit wrap
             // One-way latency = RTT/2. Kept as a double so sub-millisecond
             // values surface as e.g. "0.98 ms" instead of truncating to "0".
-            CurrentState.LatencyMs = Math.Max(0, rtt / 2.0);
+            // Clamp to a sane ceiling: on a local link (WiFi LAN or USB) a
+            // single-way ping of 999ms is already a dead link, never a "real"
+            // speed — so the readout must never print absurd 1000/2000ms.
+            CurrentState.LatencyMs = Math.Clamp(rtt / 2.0, 0, 999);
         }
         else if (hdr.Type == Protocol.PacketType.Meta && hdr.PayloadLength >= 12)
         {
