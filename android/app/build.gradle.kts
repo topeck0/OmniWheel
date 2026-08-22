@@ -12,8 +12,8 @@ android {
         applicationId = "com.topeck.omniwheel"
         minSdk = 21
         targetSdk = 35
-        versionCode = 30
-        versionName = "0.9.13"
+        versionCode = 31
+        versionName = "0.9.14"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -22,10 +22,15 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("omniwheel-release.jks")
-            storePassword = "omniwheel123"
-            keyAlias = "omniwheel"
-            keyPassword = "omniwheel123"
+            // Secrets come from the environment (local shell or CI secrets).
+            // They were previously hardcoded in this file, which leaked them
+            // to the public repo. The fallbacks keep old local builds working
+            // until you rotate the keystore.
+            storeFile = file(System.getenv("OMNIWHEEL_STORE_FILE") ?: "omniwheel-release.jks")
+            storePassword = System.getenv("OMNIWHEEL_STORE_PASSWORD") ?: "omniwheel123"
+            keyAlias = System.getenv("OMNIWHEEL_KEY_ALIAS") ?: "omniwheel"
+            keyPassword = System.getenv("OMNIWHEEL_KEY_PASSWORD")
+                ?: System.getenv("OMNIWHEEL_STORE_PASSWORD") ?: "omniwheel123"
         }
     }
     

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -7,6 +8,16 @@ namespace OmniWheelPC.Network;
 /// Optimized vJoy controller with dirty tracking.
 /// Only calls P/Invoke SetAxis/SetBtn when values actually change.
 /// Reduces P/Invoke calls from ~132/1ms to typically 1-5/1ms.
+///
+/// A dedicated output loop (StartOutputLoop) drives Update at a fixed 250Hz
+/// regardless of packet arrival, and the steering axis is eased toward the
+/// latest received value with a time-based exponential filter. This is what
+/// makes the wheel move smoothly IN-GAME: the phone's touch events and WiFi
+/// jitter produce discrete steering steps (e.g. 0 -> 24 -> 56 -> 100), and
+/// writing them verbatim made the game jump between them. The output loop
+/// interpolates so every intermediate value reaches the game, while adding
+/// only ~30ms of imperceptible inertia. Pedals/buttons stay near-instant
+/// (much smaller time constant).
 /// </summary>
 public class VJoyController : IDisposable
 {
@@ -102,6 +113,124 @@ public class VJoyController : IDisposable
     private bool[] _prevButtons = new bool[24];
     private bool _buttonsInitialized = false;
 
+    // ===== Output loop + smoothing state (single writer thread only) =====
+    private Thread? _outputThread;
+    private volatile bool _outputRunning;
+    private volatile bool _zeroPending;
+    private InputState? _outputState;
+    private Func<bool>? _isConnected;
+    private readonly InputState _neutral = new();
+    private readonly Stopwatch _outputClock = Stopwatch.StartNew();
+    private long _lastOutputTick;
+    // Shown (eased) values in INPUT units — steering -32768..32767, axes 0..255
+    private double _shownSteering;
+    private double _shownThrottle;
+    private double _shownBrake;
+    private double _shownClutch;
+
+    /// <summary>Time constant (ms) of the steering exponential ease.
+    /// ~30ms reads as instant to a driver but erases packet-rate steps.</summary>
+    public double SteeringSmoothingMs { get; set; } = 30.0;
+    /// <summary>Time constant (ms) for throttle/brake/clutch easing.</summary>
+    public double PedalSmoothingMs { get; set; } = 8.0;
+
+    /// <summary>
+    /// Start the fixed-rate output loop. From now on vJoy is written at 250Hz
+    /// from this thread only, eased toward the latest received input — never
+    /// call Update/ZeroOutputs from other threads while the loop runs.
+    /// When isConnected returns false the loop drives neutral instead of the
+    /// (stale) last state, so a dropped link always settles at center/zero.
+    /// </summary>
+    public void StartOutputLoop(InputState state, Func<bool>? isConnected = null)
+    {
+        if (_outputRunning) return;
+        _outputState = state;
+        _isConnected = isConnected;
+        _outputRunning = true;
+        _lastOutputTick = _outputClock.ElapsedMilliseconds;
+        _shownSteering = state.Steering;
+        _shownThrottle = state.Throttle;
+        _shownBrake = state.Brake;
+        _shownClutch = state.Clutch;
+        _outputThread = new Thread(OutputLoop) { Name = "VJoyOutput", IsBackground = true, Priority = ThreadPriority.AboveNormal };
+        _outputThread.Start();
+        OnLog?.Invoke("vJoy output loop started (250Hz smoothed)");
+    }
+
+    public void StopOutputLoop()
+    {
+        _outputRunning = false;
+        if (_outputThread != null && _outputThread != Thread.CurrentThread)
+        {
+            _outputThread.Join(500);
+            _outputThread = null;
+        }
+    }
+
+    /// <summary>
+    /// Ease every axis and button back to neutral immediately (output-loop
+    /// thread only — request it via RequestZero from anywhere).
+    /// </summary>
+    public void ZeroOutputs()
+    {
+        SetAxisSafe(AXIS_CENTER, AXIS_CENTER, ref _prevSteering, HID_USAGES.HID_USAGE_X);
+        SetAxisSafe(0, 0, ref _prevThrottle, HID_USAGES.HID_USAGE_Y);
+        SetAxisSafe(0, 0, ref _prevBrake, HID_USAGES.HID_USAGE_Z);
+        SetAxisSafe(0, 0, ref _prevClutch, HID_USAGES.HID_USAGE_RX);
+        for (int i = 0; i < 24; i++)
+        {
+            if (!_buttonsInitialized || _prevButtons[i])
+            {
+                SetBtn(false, VJD_ID, (byte)(i + 1));
+                _prevButtons[i] = false;
+            }
+        }
+        _buttonsInitialized = true;
+        _shownSteering = 0;
+        _shownThrottle = 0;
+        _shownBrake = 0;
+        _shownClutch = 0;
+    }
+
+    private void SetAxisSafe(long value, long prev, ref long prevField, HID_USAGES axis)
+    {
+        if (value != prev || prev == long.MinValue)
+        {
+            SetAxis(value, VJD_ID, axis);
+            prevField = value;
+        }
+    }
+
+    private void OutputLoop()
+    {
+        while (_outputRunning)
+        {
+            try
+            {
+                if (_zeroPending)
+                {
+                    _zeroPending = false;
+                    ZeroOutputs();
+                }
+                var state = _outputState;
+                if (state == null) { Thread.Sleep(4); continue; }
+                // Link down: drive toward neutral, never the stale last input
+                bool live = _isConnected?.Invoke() ?? true;
+                Update(live ? state : _neutral);
+            }
+            catch { }
+            // 250Hz fixed cadence
+            Thread.Sleep(4);
+        }
+    }
+
+    /// <summary>Thread-safe request: the next output tick releases every axis
+    /// and button to neutral (used on device disconnect).</summary>
+    public void RequestZero()
+    {
+        _zeroPending = true;
+    }
+
     // Stats
     private int _totalCalls;
     private int _skippedCalls;
@@ -161,14 +290,33 @@ public class VJoyController : IDisposable
     }
 
     /// <summary>
-    /// Update vJoy with current input state. Only calls P/Invoke when values changed.
+    /// Advance the eased output values toward the latest input targets and
+    /// write them to vJoy (dirty-tracked). Called at a fixed 250Hz by the
+    /// output loop, so the game receives continuous intermediate axis values
+    /// even when packets arrive in bursts — that is what removes the visible
+    /// 0/24/56/100 stepping inside games.
     /// </summary>
     public void Update(InputState state)
     {
         if (!_acquired) return;
 
-        // Steering: -32768..32767 -> 0..32767
-        long steeringAxis = AXIS_CENTER + (state.Steering / 2);
+        // Time-based exponential ease: identical smoothing regardless of the
+        // actual tick interval (Sleep jitter, GC pauses...).
+        long now = _outputClock.ElapsedMilliseconds;
+        double dtMs = now - _lastOutputTick;
+        if (dtMs <= 0) dtMs = 4;
+        if (dtMs > 200) dtMs = 200; // after a stall, converge fast but bounded
+        _lastOutputTick = now;
+
+        double steerAlpha = 1.0 - Math.Exp(-dtMs / Math.Max(1.0, SteeringSmoothingMs));
+        double pedalAlpha = 1.0 - Math.Exp(-dtMs / Math.Max(1.0, PedalSmoothingMs));
+
+        // Steering: ease toward target; snap when close so full lock stays exact
+        double steerTarget = state.Steering;
+        _shownSteering += (steerTarget - _shownSteering) * steerAlpha;
+        if (Math.Abs(steerTarget - _shownSteering) < 8.0) _shownSteering = steerTarget;
+
+        long steeringAxis = AXIS_CENTER + ((long)Math.Round(_shownSteering) / 2);
         if (steeringAxis < AXIS_MIN) steeringAxis = AXIS_MIN;
         else if (steeringAxis > AXIS_MAX) steeringAxis = AXIS_MAX;
         if (steeringAxis != _prevSteering)
@@ -180,7 +328,9 @@ public class VJoyController : IDisposable
         else { _skippedCalls++; }
 
         // Throttle
-        long throttleAxis = (long)((state.Throttle / 255.0) * AXIS_MAX);
+        _shownThrottle += (state.Throttle - _shownThrottle) * pedalAlpha;
+        if (Math.Abs(state.Throttle - _shownThrottle) < 2.0) _shownThrottle = state.Throttle;
+        long throttleAxis = (long)((_shownThrottle / 255.0) * AXIS_MAX);
         if (throttleAxis != _prevThrottle)
         {
             SetAxis(throttleAxis, VJD_ID, HID_USAGES.HID_USAGE_Y);
@@ -190,7 +340,9 @@ public class VJoyController : IDisposable
         else { _skippedCalls++; }
 
         // Brake
-        long brakeAxis = (long)((state.Brake / 255.0) * AXIS_MAX);
+        _shownBrake += (state.Brake - _shownBrake) * pedalAlpha;
+        if (Math.Abs(state.Brake - _shownBrake) < 2.0) _shownBrake = state.Brake;
+        long brakeAxis = (long)((_shownBrake / 255.0) * AXIS_MAX);
         if (brakeAxis != _prevBrake)
         {
             SetAxis(brakeAxis, VJD_ID, HID_USAGES.HID_USAGE_Z);
@@ -200,7 +352,9 @@ public class VJoyController : IDisposable
         else { _skippedCalls++; }
 
         // Clutch (0% at rest, 100% fully pressed — matches the preview display)
-        long clutchAxis = (long)((state.Clutch / 255.0) * AXIS_MAX);
+        _shownClutch += (state.Clutch - _shownClutch) * pedalAlpha;
+        if (Math.Abs(state.Clutch - _shownClutch) < 2.0) _shownClutch = state.Clutch;
+        long clutchAxis = (long)((_shownClutch / 255.0) * AXIS_MAX);
         if (clutchAxis != _prevClutch)
         {
             SetAxis(clutchAxis, VJD_ID, HID_USAGES.HID_USAGE_RX);
@@ -240,6 +394,7 @@ public class VJoyController : IDisposable
 
     public void Dispose()
     {
+        StopOutputLoop();
         if (_acquired)
         {
             OnLog?.Invoke($"vJoy stats: {_totalCalls} P/Invoke calls, {_skippedCalls} skipped ({100.0 * _skippedCalls / Math.Max(1, _totalCalls + _skippedCalls):F1}% saved)");

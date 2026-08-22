@@ -231,14 +231,17 @@ class InputSender(private val context: Context) {
     }
 
     /** Receive one packet (UDP datagram or USB frame), null when shutting down. */
+    private val rxBuffer = ByteArray(512)
+
     private fun receivePacket(): ByteArray? {
         val sock = udpSocket
         if (sock != null) {
+            // Single reused buffer: the old code allocated a fresh 512B array
+            // per received packet (hundreds of KB/s of pure GC churn).
             return try {
-                val buf = ByteArray(512)
-                val pkt = DatagramPacket(buf, buf.size)
+                val pkt = DatagramPacket(rxBuffer, rxBuffer.size)
                 sock.receive(pkt)
-                buf.copyOfRange(0, pkt.length)
+                rxBuffer.copyOfRange(0, pkt.length)
             } catch (e: Exception) { null }
         }
         val input = usbIn ?: return null
@@ -541,16 +544,18 @@ class InputSender(private val context: Context) {
     private fun startSendLoop() {
         sendThread = thread(name = "InputSender") {
             val gen = transportGen
-            val intervalNs = 1_000_000_000L / sendRateHz
+            var intervalNs = 1_000_000_000L / sendRateHz
             var nextTime = System.nanoTime()
             var lastForceSendTime = 0L
 
             // Congestion backoff: when a UDP send blocks for a while, the WiFi
-            // driver/kernel buffer is wedged. Piling on 4x redundant copies
-            // just keeps it wedged (the classic "pk/s collapses towards 1 for
-            // a few seconds, then recovers" symptom). When detected, drop to a
-            // single copy for a short window so the link drains instead of
-            // blocking the send loop.
+            // driver/kernel buffer is wedged. Piling on 4x redundant copies and
+            // full-rate packets just keeps it wedged (the classic "pk/s
+            // collapses towards 1 for a few seconds, then recovers" symptom).
+            // When detected: drop to a single copy AND temporarily halve the
+            // send rate (never below 100Hz) so the link drains instead of us
+            // feeding the queue. The rate recovers gradually once sends stop
+            // blocking — this is what keeps a weak/old router usable.
             var congestionUntilMs = 0L
             var lastCongestionLogMs = 0L
 
@@ -600,7 +605,7 @@ class InputSender(private val context: Context) {
                             // between a shift and a destroyed gearbox. Send them
                             // 4x back-to-back on WiFi. Over the wired USB TCP
                             // bridge one copy is already reliable.
-                            val congested = System.currentTimeMillis() < congestionUntilMs
+                            val congested = nowMs < congestionUntilMs
                             val copies = if (usbSocket != null) 1
                                 else if (congested) 1
                                 else if (changed) 4
@@ -613,10 +618,14 @@ class InputSender(private val context: Context) {
                             val blockedMs = (System.nanoTime() - sendStartNs) / 1_000_000
                             if (blockedMs > 8) {
                                 congestionUntilMs = nowMs + 100
+                                intervalNs = (intervalNs * 2).coerceAtMost(10_000_000L) // >=100Hz floor
                                 if (nowMs - lastCongestionLogMs > 4000) {
                                     lastCongestionLogMs = nowMs
-                                    onLog?.invoke("WiFi saturated — UDP send blocked ${blockedMs}ms, throttling copies")
+                                    onLog?.invoke("WiFi saturated — throttling to ${(1_000_000_000L / intervalNs)}Hz, single copy")
                                 }
+                            } else if (!congested && intervalNs > baseIntervalNs()) {
+                                // Healthy again: recover the rate gradually.
+                                intervalNs = (intervalNs + baseIntervalNs()) / 2
                             }
                             _sendCount++
                             _dupCount += copies - 1
@@ -638,11 +647,14 @@ class InputSender(private val context: Context) {
 
                         nextTime = now + intervalNs
                     } else {
+                        // BATTERY: park instead of spinning. The old code called
+                        // Thread.yield() for waits under 2ms, which is a busy
+                        // CPU loop at 240-500Hz — constant wakeups and real
+                        // battery drain for zero benefit. parkNanos blocks the
+                        // thread properly even for sub-millisecond waits.
                         val sleepNs = nextTime - now
-                        if (sleepNs > 2_000_000L) {
-                            Thread.sleep(sleepNs / 1_000_000, (sleepNs % 1_000_000).toInt())
-                        } else {
-                            Thread.yield()
+                        if (sleepNs > 100_000L) {
+                            java.util.concurrent.locks.LockSupport.parkNanos((sleepNs - 200_000L).coerceAtLeast(1L))
                         }
                     }
                 } catch (_: InterruptedException) { break }
@@ -671,6 +683,9 @@ class InputSender(private val context: Context) {
             Log.d(TAG, "Send loop ended: $_sendCount sent, $_dupCount redundant, $_skipCount skipped, $_errorCount errors")
         }
     }
+
+    /** Configured send interval in ns (recomputed so runtime rate changes apply). */
+    private fun baseIntervalNs(): Long = 1_000_000_000L / sendRateHz.coerceIn(30, 500)
 
     private fun startHeartbeat() {
         heartbeatThread = thread(name = "Heartbeat") {
@@ -702,8 +717,10 @@ class InputSender(private val context: Context) {
             val buf = ByteArray(512)
             while (running && gen == transportGen) {
                 try {
-                    val data = receivePacket() ?: break
-                    val header = Protocol.parseHeader(data) ?: continue
+                val data = receivePacket() ?: break
+                // SECURITY: drop corrupted packets before acting on them.
+                if (!Protocol.validateCrc(data)) continue
+                val header = Protocol.parseHeader(data) ?: continue
                     when (header.type) {
                         Protocol.TYPE_PING -> {
                             if (data.size > Protocol.HEADER_SIZE + Protocol.CRC_SIZE) {
@@ -778,6 +795,9 @@ class InputSender(private val context: Context) {
     fun disconnect() {
         if (running) {
             try {
+                // SAFETY: release the game's inputs on BOTH transports — the
+                // old code only sent the zero packet over WiFi, so a USB
+                // disconnect could leave the car holding the last throttle.
                 val zeroPacket = Protocol.buildInputPacket(
                     steering = 0, throttle = 0, brake = 0, clutch = 0,
                     activeButtons = emptySet()
@@ -787,6 +807,14 @@ class InputSender(private val context: Context) {
                     val addr = InetSocketAddress(targetIp, targetPort)
                     repeat(5) { // send 5 times to guarantee arrival
                         sock.send(DatagramPacket(zeroPacket, zeroPacket.size, addr))
+                    }
+                } else if (usbOut != null) {
+                    synchronized(usbLock) {
+                        repeat(3) {
+                            usbOut?.writeInt(zeroPacket.size)
+                            usbOut?.write(zeroPacket)
+                        }
+                        usbOut?.flush()
                     }
                 }
             } catch (_: Exception) {}

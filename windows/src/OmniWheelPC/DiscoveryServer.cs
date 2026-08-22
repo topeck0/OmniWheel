@@ -77,8 +77,11 @@ public class DiscoveryServer : IDisposable
 
                 if (hdr.Type == Protocol.PacketType.Discover)
                 {
+                    // SECURITY: payload length is untrusted — bound it to what
+                    // actually arrived before reading.
+                    int maxPayload = data.Length - hdr.HeaderSize - Protocol.CrcSize;
                     string? deviceName = null;
-                    if (hdr.PayloadLength > 0)
+                    if (hdr.PayloadLength > 0 && hdr.PayloadLength <= maxPayload)
                         deviceName = Encoding.UTF8.GetString(data, hdr.HeaderSize, hdr.PayloadLength);
 
                     var device = new DiscoveredDevice
