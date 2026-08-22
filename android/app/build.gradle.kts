@@ -21,23 +21,28 @@ android {
     }
 
     signingConfigs {
+        // Signing material comes ONLY from the environment (local shell or CI
+        // secrets) — never committed. Without it, release builds fall back to
+        // the debug key.
         create("release") {
-            // Secrets come from the environment (local shell or CI secrets).
-            // They were previously hardcoded in this file, which leaked them
-            // to the public repo. The fallbacks keep old local builds working
-            // until you rotate the keystore.
             storeFile = file(System.getenv("OMNIWHEEL_STORE_FILE") ?: "omniwheel-release.jks")
-            storePassword = System.getenv("OMNIWHEEL_STORE_PASSWORD") ?: "[REMOVED]"
+            storePassword = System.getenv("OMNIWHEEL_STORE_PASSWORD")
             keyAlias = System.getenv("OMNIWHEEL_KEY_ALIAS") ?: "omniwheel"
             keyPassword = System.getenv("OMNIWHEEL_KEY_PASSWORD")
-                ?: System.getenv("OMNIWHEEL_STORE_PASSWORD") ?: "[REMOVED]"
+                ?: System.getenv("OMNIWHEEL_STORE_PASSWORD")
         }
     }
     
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            // Sign with the release key only when credentials exist; otherwise
+            // fall back to the debug key so the project still builds.
+            signingConfig = if (signingConfigs.getByName("release").storePassword != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

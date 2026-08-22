@@ -35,8 +35,22 @@ jobs:
             gradle wrapper --gradle-version 8.10.2
           fi
       
+      - name: Restore signing keystore
+        working-directory: android/app
+        env:
+          OMNIWHEEL_KEYSTORE_BASE64: ${{ secrets.OMNIWHEEL_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$OMNIWHEEL_KEYSTORE_BASE64" ]; then
+            echo "$OMNIWHEEL_KEYSTORE_BASE64" | base64 -d > omniwheel-release.jks
+          else
+            echo "::warning::OMNIWHEEL_KEYSTORE_BASE64 not set — release APK will be signed with the debug key"
+          fi
+
       - name: Build Release APK
         working-directory: android
+        env:
+          OMNIWHEEL_STORE_PASSWORD: ${{ secrets.OMNIWHEEL_STORE_PASSWORD }}
+          OMNIWHEEL_KEY_PASSWORD: ${{ secrets.OMNIWHEEL_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
       
       - uses: actions/upload-artifact@v4

@@ -34,3 +34,7 @@ scripts/
 worklog.md
 *.log
 download/
+
+# Signing material — NEVER commit (delivered via CI secrets)
+*.jks
+*.keystore
