@@ -53,6 +53,7 @@ public class InputReceiver : IDisposable
     private const int TimeoutMs = 8000;
     private byte _lastInputSeq;
     private bool _hasInputSeq;
+    private bool _hasPrevInputPacket;
 
     // Timestamp of the most recent PING we sent. A PONG carrying a DIFFERENT
     // timestamp is a stale/delayed echo from an older PING; accepting it would
@@ -60,6 +61,46 @@ public class InputReceiver : IDisposable
     // spike (the sudden "400/600ms" even on a perfectly stable link).
     private long _lastSentPingTs = -1;
     private bool _sentPing;
+
+    // Rolling RTT samples for the honest (median) latency readout.
+    private const int RttSampleCount = 7;
+    private readonly double[] _rttSamples = new double[RttSampleCount];
+    private int _rttIdx;
+    private int _rttFill;
+
+    private double MedianRtt()
+    {
+        int n = _rttFill;
+        if (n == 0) return 0;
+        var buf = new double[n];
+        Array.Copy(_rttSamples, buf, n);
+        Array.Sort(buf);
+        return buf[n / 2];
+    }
+
+    /// <summary>Clear link-quality tracking when a session starts or ends so
+    /// stale stalls/RTT samples never bleed into the next connection.</summary>
+    private void ResetLinkQuality()
+    {
+        _hasPrevInputPacket = false;
+        _recentStalls = 0;
+        _lastStallWindowUtc = DateTime.UtcNow;
+        Array.Clear(_rttSamples);
+        _rttIdx = 0;
+        _rttFill = 0;
+    }
+
+    // Input-gap tracking: how often the input stream stalled for >=150ms while
+    // the link was up. This is what a user FEELS as lag even when the ping
+    // number looks fine — packet bursts lost on a weak router stall the wheel.
+    private DateTime _lastInputPacketUtc = DateTime.UtcNow;
+    private int _stallEvents;
+    public int StallEvents => _stallEvents;
+    /// <summary>True when input stalls were seen in the recent window.</summary>
+    public bool IsLinkDegraded => _recentStalls > 0;
+
+    private int _recentStalls;
+    private DateTime _lastStallWindowUtc = DateTime.UtcNow;
 
     // Packet counters (shared between UDP and USB paths)
     private int _packetCount;
@@ -136,6 +177,7 @@ public class InputReceiver : IDisposable
                 _lockedEndPoint = _lastRemote;
                 _lastInputTime = DateTime.UtcNow;
                 _hasInputSeq = false;
+                ResetLinkQuality();
                 OnConnected?.Invoke();
                 OnLog?.Invoke($"Device connected: USB (adb reverse)");
 
@@ -161,13 +203,14 @@ public class InputReceiver : IDisposable
                             _usbStream = null;
                             _usbClient = null;
                             TryDispose(client);
-                            if (_lastRemote?.Address != null && _lastRemote!.Address.Equals(IPAddress.Loopback))
-                            {
-                                _lastRemote = null;
-                                _lockedEndPoint = null;
-                            }
-                            _hasInputSeq = false;
-                            OnDisconnected?.Invoke();
+                        if (_lastRemote?.Address != null && _lastRemote!.Address.Equals(IPAddress.Loopback))
+                        {
+                            _lastRemote = null;
+                            _lockedEndPoint = null;
+                        }
+                        _hasInputSeq = false;
+                        ResetLinkQuality();
+                        OnDisconnected?.Invoke();
                             OnLog?.Invoke("USB device disconnected");
                         }
                     }
@@ -289,6 +332,13 @@ public class InputReceiver : IDisposable
         if (!Protocol.TryParseHeader(data, 0, out var hdr))
             return;
 
+        // SECURITY: the header's claimed payload length is attacker-controlled.
+        // Never trust it beyond what actually arrived in this datagram/frame,
+        // or crafted packets could make the parsers read out of bounds.
+        int maxPayload = data.Length - hdr.HeaderSize - Protocol.CrcSize;
+        if (maxPayload < 0) return;
+        if (hdr.PayloadLength > maxPayload) return;
+
         // Validate CRC
         if (!Protocol.ValidateCrc(data, hdr.HeaderSize))
         {
@@ -306,31 +356,7 @@ public class InputReceiver : IDisposable
         }
         else if (hdr.Type == Protocol.PacketType.Input && hdr.PayloadLength >= 5)
         {
-            // Reject stale/out-of-order replays (UDP can reorder): an old
-            // packet arriving late would otherwise yank the wheel backward after
-            // we already applied a newer value. Sequence is 0..127 (wraps at
-            // 128); forward distance modulo 128, skip anything more than half a
-            // cycle behind. Duplicates (distance 0) are fine.
-            if (_hasInputSeq)
-            {
-                int dist = (hdr.Sequence - _lastInputSeq) & 0x7F;
-                if (dist != 0 && dist >= 64) return;
-            }
-            _hasInputSeq = true;
-            _lastInputSeq = hdr.Sequence;
-
-            ParseInputInPlace(data, hdr.HeaderSize, hdr.PayloadLength);
-            OnInputReceived?.Invoke();
-
-            // Periodic logging (every 5 seconds)
-            var now = DateTime.UtcNow;
-            if ((now - _lastLogTime).TotalSeconds >= 5)
-            {
-                var delta = _packetCount - _lastLogCount;
-                OnLog?.Invoke($"Input: str={CurrentState.Steering} pk/s={delta / 5} crc_err={_crcErrors}");
-                _lastLogCount = _packetCount;
-                _lastLogTime = now;
-            }
+            ProcessInputPacket(data, hdr);
         }
         else if (hdr.Type == Protocol.PacketType.Heartbeat)
         {
@@ -357,12 +383,21 @@ public class InputReceiver : IDisposable
             long tsFull = (nowUnix & ~0xFFFFFFFFL) | tsLow;
             long rtt = nowUnix - tsFull;
             if (rtt < 0) rtt += 0x100000000L; // borrow across the 32-bit wrap
-            // One-way latency = RTT/2. Kept as a double so sub-millisecond
-            // values surface as e.g. "0.98 ms" instead of truncating to "0".
+
+            // HONEST readout: keep the last few raw RTT samples and report the
+            // MEDIAN. A single lucky-fast sample can no longer mask a lagging
+            // link (the "shows 20ms but feels like 700ms" complaint), and a
+            // single queue blast can no longer fake a huge spike either — both
+            // must persist across half of the samples to move the number.
+            _rttSamples[_rttIdx] = rtt / 2.0; // one-way
+            _rttIdx = (_rttIdx + 1) % RttSampleCount;
+            if (_rttFill < RttSampleCount) _rttFill++;
+            double median = MedianRtt();
+
             // Clamp to a sane ceiling: on a local link (WiFi LAN or USB) a
             // single-way ping of 999ms is already a dead link, never a "real"
             // speed — so the readout must never print absurd 1000/2000ms.
-            CurrentState.LatencyMs = Math.Clamp(rtt / 2.0, 0, 999);
+            CurrentState.LatencyMs = Math.Clamp(median, 0, 999);
         }
         else if (hdr.Type == Protocol.PacketType.Meta && hdr.PayloadLength >= 12)
         {
@@ -443,6 +478,7 @@ public class InputReceiver : IDisposable
                     _lockedEndPoint = null;
                     _ignoredOtherLogged = null;
                     _hasInputSeq = false;
+                    ResetLinkQuality();
                 }
             }
             wasConnected = connected;
@@ -499,6 +535,61 @@ public class InputReceiver : IDisposable
         }
     }
 
+    /// <summary>
+    /// Fully-synchronous INPUT processing (stale rejection, stall tracking,
+    /// in-place parse, event). Called directly from the UDP receive loop so
+    /// the dominant packet type never pays async/Task machinery per packet;
+    /// the USB reader and shared handler also route through here.
+    /// </summary>
+    private void ProcessInputPacket(byte[] data, Protocol.ParsedHeader hdr)
+    {
+        // Reject stale/out-of-order replays (UDP can reorder): an old
+        // packet arriving late would otherwise yank the wheel backward after
+        // we already applied a newer value. Sequence is 0..127 (wraps at
+        // 128); forward distance modulo 128, skip anything more than half a
+        // cycle behind. Duplicates (distance 0) are fine.
+        if (_hasInputSeq)
+        {
+            int dist = (hdr.Sequence - _lastInputSeq) & 0x7F;
+            if (dist != 0 && dist >= 64) return;
+        }
+        _hasInputSeq = true;
+        _lastInputSeq = hdr.Sequence;
+
+        // Input-stall tracking: a gap of >=150ms between consecutive input
+        // packets while the link is up means packets were lost/delayed —
+        // exactly what a user feels as rubber-banding even when the median
+        // ping looks fine.
+        var utcNow = DateTime.UtcNow;
+        var gapMs = (utcNow - _lastInputPacketUtc).TotalMilliseconds;
+        if (_hasPrevInputPacket && gapMs >= 150)
+        {
+            Interlocked.Increment(ref _stallEvents);
+            _recentStalls++;
+        }
+        _lastInputPacketUtc = utcNow;
+        _hasPrevInputPacket = true;
+
+        // Decay the "recently degraded" window every 10s of clean flow.
+        if ((utcNow - _lastStallWindowUtc).TotalSeconds >= 10)
+        {
+            _lastStallWindowUtc = utcNow;
+            if (_recentStalls > 0 && gapMs < 150) _recentStalls = 0;
+        }
+
+        ParseInputInPlace(data, hdr.HeaderSize, hdr.PayloadLength);
+        OnInputReceived?.Invoke();
+
+        // Periodic logging (every 5 seconds)
+        if ((utcNow - _lastLogTime).TotalSeconds >= 5)
+        {
+            var delta = _packetCount - _lastLogCount;
+            OnLog?.Invoke($"Input: str={CurrentState.Steering} pk/s={delta / 5} crc_err={_crcErrors}");
+            _lastLogCount = _packetCount;
+            _lastLogTime = utcNow;
+        }
+    }
+
     private async Task RunAsync()
     {
         while (_running && _cts != null && !_cts.IsCancellationRequested)
@@ -509,8 +600,30 @@ public class InputReceiver : IDisposable
                 var data = result.Buffer;
                 var remote = result.RemoteEndPoint as IPEndPoint;
                 if (remote == null) continue;
-                // Delegate everything to the shared pipeline. Suppress re-entry
-                // while packets are in flight.
+
+                // FAST PATH: INPUT packets dominate traffic on an active link.
+                // Handle them fully synchronously — no Task/state-machine
+                // allocation per packet, no await hops. At ~1000 packets/s this
+                // measurably cuts receiver CPU vs routing everything through
+                // the async handler.
+                if (Protocol.TryParseHeader(data, 0, out var hdr))
+                {
+                    int maxPayload = data.Length - hdr.HeaderSize - Protocol.CrcSize;
+                    bool secure =
+                        maxPayload >= 0 &&
+                        hdr.PayloadLength <= maxPayload &&
+                        Protocol.ValidateCrc(data, hdr.HeaderSize);
+                    if (secure && hdr.Type == Protocol.PacketType.Input && hdr.PayloadLength >= 5 &&
+                        LocksRemote(remote))
+                    {
+                        _packetCount++;
+                        ProcessInputPacket(data, hdr);
+                        continue;
+                    }
+                }
+
+                // Everything else (connect/handshakes/HUD/pings/bad packets)
+                // goes through the full async handler.
                 await HandleOwPacketAsync(data, remote);
             }
             catch (OperationCanceledException) { break; }
@@ -520,6 +633,14 @@ public class InputReceiver : IDisposable
                 if (_running) OnLog?.Invoke($"Input error: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>Multi-device guard: lock onto the first phone that talks to us
+    /// and ignore every other source.</summary>
+    private bool LocksRemote(IPEndPoint remote)
+    {
+        if (_lockedEndPoint == null) return true;
+        return _lockedEndPoint.Address.Equals(remote.Address);
     }
 
     /// <summary>
@@ -543,19 +664,17 @@ public class InputReceiver : IDisposable
             CurrentState.GyroZ = (short)(data[off + 9] | (data[off + 10] << 8));
             ParseButtons(data, off + 11, Math.Min(3, payloadLen - 11));
         }
-        else if (payloadLen >= 7)
+        else
         {
+            // Minimal (v2 compact, no gyro) packet: buttons start right after
+            // the pedals when present. The old code fell through to reading
+            // gyro bytes here even for a 5-byte payload (out of bounds).
             CurrentState.GyroX = 0;
             CurrentState.GyroY = 0;
             CurrentState.GyroZ = 0;
-            ParseButtons(data, off + 5, Math.Min(3, payloadLen - 5));
-        }
-        else
-        {
-            CurrentState.GyroX = (short)(data[off + 5] | (data[off + 6] << 8));
-            CurrentState.GyroY = (short)(data[off + 7] | (data[off + 8] << 8));
-            CurrentState.GyroZ = (short)(data[off + 9] | (data[off + 10] << 8));
-            ParseButtons(data, off + 11, Math.Min(3, payloadLen - 11));
+            int btnOff = off + 5;
+            int btnLen = payloadLen >= 8 ? Math.Min(3, payloadLen - 5) : 0;
+            if (btnLen > 0) ParseButtons(data, btnOff, btnLen);
         }
 
         CurrentState.Timestamp = DateTime.UtcNow;

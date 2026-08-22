@@ -182,10 +182,15 @@ public class MainForm : Form
             timeBeginPeriod(1); // allow sub-16ms timers for high-refresh preview
             ApplyRoundedCorners();
             _vJoy.Initialize();
+            // Fixed-rate 250Hz smoothed output loop owns ALL vJoy writes from
+            // here on. It interpolates between received packets so the GAME
+            // sees every intermediate steering value (the phone's packets and
+            // the preview are discrete; the game no longer has to be).
+            if (_vJoy.IsAvailable) _vJoy.StartOutputLoop(_input.CurrentState, () => _input.IsConnected);
             _discovery.Start();
             _input.Start();
             _uiTimer.Start();
-            Log("OmniWheel PC v0.9.13 started");
+            Log("OmniWheel PC v0.9.14 started");
             Log("Ready for high-performance UDP communication on ports 19700/19701");
         };
 
@@ -253,7 +258,7 @@ public class MainForm : Form
 
         var titleLabel = new Label
         {
-            Text = "OmniWheel v0.9.13",
+            Text = "OmniWheel v0.9.14",
             Font = FntTitle,
             ForeColor = TextWhite,
             AutoSize = true,
@@ -419,9 +424,6 @@ public class MainForm : Form
         _lblDeviceName = CreateCardInfoLabel("connected device: --", 16, 44);
         _lblPhoneIp = CreateCardInfoLabel("Phone IP: --", 16, 68);
         _lblBattery = CreateCardInfoLabel("Battery: --", 16, 92);
-
-        _lblPing = CreateCardInfoLabel("Current ping: -- ms", 16, 116);
-        _pingGraph = new PingGraphControl { Size = new Size(90, 24), Location = new Point(165, 114) };
 
         _lblPing = CreateCardInfoLabel("Current ping: -- ms", 16, 116);
         _pingGraph = new PingGraphControl { Size = new Size(90, 24), Location = new Point(165, 114) };
@@ -978,13 +980,8 @@ public class MainForm : Form
     {
         _packetCount++;
         _hudPreview.InputState = _input.CurrentState;
-
-        // Push straight to the vJoy device on the receiver thread. This runs at
-        // the real packet rate (hundreds of Hz) instead of the ~64Hz WinForms
-        // WM_TIMER rate, so the game sees the same smooth, immediate axis
-        // updates the preview shows - no added wheel/gear lag.
-        if (_vJoy.IsAvailable)
-            _vJoy.Update(_input.CurrentState);
+        // vJoy is written exclusively by the 250Hz smoothed output loop
+        // (started in Load) — writing here too would race its dirty tracking.
     }
 
     private void OnDeviceConnected()
@@ -1094,6 +1091,10 @@ public class MainForm : Form
 
     private void OnDeviceDisconnected()
     {
+        // SAFETY: the link died mid-drive — release everything so the car
+        // doesn't keep full throttle / a held gear from the last packets.
+        // Routed through the output loop's own thread (RequestZero).
+        try { _vJoy.RequestZero(); } catch { }
         if (InvokeRequired) { BeginInvoke(OnDeviceDisconnected); return; }
         _connHeaderLabel.Text = "Waiting for phone...";
         _connHeaderLabel.ForeColor = TextMuted;
@@ -1205,6 +1206,20 @@ public class MainForm : Form
                 }
                 _lblPing.Text = $"Latency: {FormatLatencyMs(_smoothedLatency)} ms";
                 _pingGraph.AddPing((int)Math.Round(_smoothedLatency));
+            }
+
+            // Honest link health: input stalls (lost/delayed bursts) are what
+            // the user FEELS as lag even when the median ping looks fine —
+            // surface it instead of hiding behind a good number.
+            if (_input.IsLinkDegraded)
+            {
+                _connHeaderLabel.Text = "Connected * (unstable link)";
+                _connHeaderLabel.ForeColor = Color.FromArgb(245, 158, 11); // amber
+            }
+            else
+            {
+                _connHeaderLabel.Text = "Connected *";
+                _connHeaderLabel.ForeColor = GreenDot;
             }
         }
         else
