@@ -64,19 +64,13 @@ Designed for driving simulators with:
 | Deadzone | Auto Discovery |
 | Curves | Fast Reconnect |
 
-| Controls | 
-|----------| 
-| Pedals | 
-| Handbrake | 
-| Unlimited Buttons | 
-| Custom Layouts | 
-| Sensors |
-
-| Sensor |
-|---------|
-| Gyroscope |
-| Drift Correction |
-| Auto Calibration |
+| Controls |   | Sensor |
+|:---|:---:|:---|
+| Pedals | \| | Gyroscope |
+| Handbrake | \| | Drift Correction |
+| Unlimited Buttons | \| | Auto Calibration |
+| Custom Layouts | \| | |
+| Sensors | \| | |
 ---
 
 <h2 id="screenshots">Screenshots</h2>
