@@ -64,7 +64,7 @@ Designed for driving simulators with:
 | Deadzone | Auto Discovery |
 | Curves | Fast Reconnect |
 
-| Controls |   | Sensor |
+| Controls |  \|  | Sensor |
 |:---|:---:|:---|
 | Pedals | \| | Gyroscope |
 | Handbrake | \| | Drift Correction |
