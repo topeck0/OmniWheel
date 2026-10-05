@@ -6,11 +6,11 @@
 
 # 🛞 OmniWheel
 
-### Turn your Android phone into a professional Virtual Steering Wheel.
+### Turn your Android phone into a Virtual Steering Wheel.
 
 **Low Latency • Wi-Fi • vJoy • Touch Steering • Gyroscope**
 
-note: usb is still in development 
+Note: usb is still in development 
 <p>
 
 <a href="https://github.com/topeck0/OmniWheel/releases">
@@ -24,8 +24,6 @@ note: usb is still in development
 <img src="https://img.shields.io/github/stars/topeck0/OmniWheel?style=for-the-badge">
 
 <img src="https://img.shields.io/github/issues/topeck0/OmniWheel?style=for-the-badge">
-
-<img src="https://img.shields.io/github/license/topeck0/OmniWheel?style=for-the-badge">
 
 </p>
 
@@ -53,12 +51,11 @@ Designed for driving simulators with:
 - USB
 - Wi-Fi
 - Modern UI
-- Custom Profiles
 - vJoy Integration
 
 ---
 
-<h2 id="features">🎯 Features</h2>
+<h2 id="features">Features</h2>
 
 | Steering | Connectivity |
 |----------|-------------|
@@ -67,22 +64,22 @@ Designed for driving simulators with:
 | Deadzone | Auto Discovery |
 | Curves | Fast Reconnect |
 
-| Controls | Sensors |
-|----------|---------|
-| Pedals | Gyroscope |
-| Handbrake | Accelerometer |
-| Unlimited Buttons | Drift Correction |
-| Custom Layouts | Calibration |
+| Controls || Sensors |
+|----------||---------|
+| Pedals || Gyroscope |
+| Handbrake || Drift Correction |
+| Unlimited Buttons || Drift Correction |
+| Custom Layouts || Auto Calibration |
 
 ---
 
-<h2 id="screenshots">📷 Screenshots</h2>
+<h2 id="screenshots">Screenshots</h2>
 
 > Coming Soon
 
 ---
 
-<h2 id="performance">⚡ Performance</h2>
+<h2 id="performance">Performance</h2>
 
 | Feature | Status |
 |---------|:------:|
@@ -97,23 +94,23 @@ Designed for driving simulators with:
 <h2 id="architecture">🧠 Architecture</h2>
 
 ```text
-Android Phone
+   Controls
       │
-Touch / Gyroscope
+Android Phone
       │
       ▼
 OmniWheel Android
       │
- UDP / TCP / USB
+UDP / TCP / USB
       │
       ▼
 OmniWheel Windows
       │
       ▼
-    vJoy Driver
+  vJoy Driver
       │
       ▼
-      Game
+    Game
 ```
 
 ---
@@ -127,7 +124,7 @@ OmniWheel Windows
 - Assetto Corsa Competizione
 - Live For Speed
 - rFactor 2
-- Any game supporting vJoy
+- Any game that supportes vJoy
 
 ---
 
@@ -137,7 +134,7 @@ OmniWheel Windows
 
 <summary><b>📱 Android</b></summary>
 
-Download & install the latest APK from Releases.
+Download & install the latest APK from [Releases](https://github.com/topeck0/OmniWheel/releases/download/v0.9/).
 
 </details>
 
@@ -151,7 +148,7 @@ Install [vJoy](https://sourceforge.net/projects/vjoystick/files/latest/download)
 
 Importand Note: Run Configure vJoy and set Numbers of Buttons to whatever number you want >=30 
 
-Download the Windows Receiver from releases and run it.
+Download the Windows Receiver from [Releases](https://github.com/topeck0/OmniWheel/releases/download/v0.9/ and run it.
 
 </details>
 
@@ -162,8 +159,8 @@ Download the Windows Receiver from releases and run it.
 - [x] Planning
 - [x] Architecture
 - [x] Android App
-- [ ] Windows Receiver
-- [ ] USB Mode
+- [x] Windows Receiver
+- [x] USB Mode
 - [ ] Profiles
 - [ ] Themes
 - [ ] Plugins
